@@ -133,9 +133,10 @@
     const et  = { fontSize:fst, alignment:'center' };
     const etb = { fontSize:fst, alignment:'center', bold:true };
 
-    const comedor     = String(d.comedor||'').toUpperCase();
-    const modalidad   = (String(d.modalidad||'FIJO').toUpperCase().trim()) || 'FIJO';
-    const comedorFull = 'COMEDOR SOCIAL '+modalidad+' '+comedor;
+    const comedor     = capitalizar(String(d.comedor||''));
+    const modalidad   = capitalizar(String(d.modalidad||'Fijo').trim()) || 'Fijo';
+    const comedorFull = 'Comedor Social '+modalidad+' '+comedor;
+    const deptoTxt    = d.departamento ? (', del departamento de '+capitalizar(String(d.departamento))) : '';
     const supNom  = String(d.supervisor||'').toUpperCase();
     const supCui  = String(d.supervisor_cui||'').trim();
     const empresa = String(d.empresa||'Banquetes de Guatemala, S.A.');
@@ -172,7 +173,13 @@
     const totDesL   = totDes   ? numLetrasFem(totDes)   : 'cero';
     const totAlmL   = totAlm   ? numLetrasFem(totAlm)   : 'cero';
     const totTotalL = totTotal ? numLetrasFem(totTotal) : 'cero';
-    const corrTxt   = d.correlativo ? ('correlativo '+d.correlativo) : 'el correlativo correspondiente';
+    const corrRaw   = d.correlativo!=null ? String(d.correlativo).trim() : '';
+    // El correlativo puede venir como "4", "007-2026" o "007". Tomamos el primer número.
+    const corrNumM  = corrRaw.match(/\d+/);
+    const corrNum   = corrNumM ? parseInt(corrNumM[0],10) : null;
+    const corrTxt   = (corrNum!=null)
+      ? ('correlativo '+numLetras(corrNum)+' ('+corrNum+')')
+      : 'el correlativo correspondiente';
     const incumpTxt = incump.replace('Í','I').includes('SI') ? 'SI hubo incumplimiento' : 'NO hubo incumplimiento';
 
     let rangoTxt = 'del periodo correspondiente';
@@ -202,8 +209,8 @@
         'Identificación (CUI) '+supCuiLetras+' ('+supCui+') extendido por el Registro Nacional de '+
         'las Personas de la República de Guatemala,');
     }
-    N(' actúo en mi calidad de Supervisor de Comedores, asignado al '+comedorFull+
-      ' del Ministerio de Desarrollo Social. Estamos constituidos para suscribir la presente '+
+    N(' actúo en mi calidad de Supervisor de Comedores, asignado al '+comedorFull+deptoTxt+
+      ', del Ministerio de Desarrollo Social. Estamos constituidos para suscribir la presente '+
       'Acta Consolidada, con el propósito de hacer constar lo siguiente: ');
     B('PRIMERO:');
     N(' El Manual Operativo del Programa Social \u201cComedor Social\u201d, establece el procedimiento '+
@@ -213,7 +220,14 @@
 
     // ── Tabla (12 columnas, spans, igual que reportlab) ──
     const rawCols=[0.045,0.13,0.10,0.09,0.075,0.075,0.065,0.09,0.075,0.075,0.065,0.10];
-    const W = PAGE_W-LEFT_M-RIGHT_M;
+    // pdfmake dibuja el padding de celda y las líneas verticales POR FUERA de los
+    // anchos declarados, así que el ancho real de la tabla = Σwidths + padding·2·nCols
+    // + líneas. Descontamos ese overhead para que el borde derecho de la tabla quede
+    // alineado con el bloque de texto (mismo ancho que los párrafos).
+    const N_COLS=rawCols.length;
+    const CELL_PAD=2, VLINE=0.4;
+    const overhead = (CELL_PAD*2)*N_COLS + VLINE*(N_COLS+1);
+    const W = (PAGE_W-LEFT_M-RIGHT_M) - overhead;
     const sumCols=rawCols.reduce((a,b)=>a+b,0);
     const widths = rawCols.map(c=>Math.round((W*c/sumCols)*100)/100);
 
@@ -278,9 +292,9 @@
         'constan el cierre administrativo diario, suscritas por el Encargado del Comedor Social; y '+
         'd) el Cuadro de Consolidación de las raciones servidas, identificado con '+corrTxt+', '+
         'elaborado por el Encargado del Comedor y revisado por el infrascrito Supervisor, asignado '+
-        'al '+comedorFull+'; registrando la cantidad de '+totDesL+' ('+totDes+') RACIONES DE '+
-        'DESAYUNOS y '+totAlmL+' ('+totAlm+') RACIONES DE ALMUERZOS, PARA UN TOTAL DE '+totTotalL+
-        ' ('+totTotal+') RACIONES SERVIDAS, durante el periodo que comprende '+rangoTxt+' a los '+
+        'al '+comedorFull+'; registrando la cantidad de '+totDesL+' ('+totDes+') raciones de '+
+        'desayunos y '+totAlmL+' ('+totAlm+') raciones de almuerzos, para un total de '+totTotalL+
+        ' ('+totTotal+') raciones servidas, durante el periodo que comprende '+rangoTxt+' a los '+
         'usuarios del Comedor Social descrito. Asimismo, se hace constar que, durante el periodo '+
         'descrito en el presente punto de acta, '+incumpTxt+' por parte de la empresa proveedora. '},
       {text:'TERCERO:',bold:true},
