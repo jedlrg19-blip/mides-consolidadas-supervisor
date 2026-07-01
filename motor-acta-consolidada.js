@@ -305,6 +305,23 @@
     return docDefinition;
   }
 
+  /* ─────────────── Registro de fuentes ───────────────
+     pdfmake solo trae 'Roboto' en su vfs_fonts.js. El documento usa
+     defaultStyle.font='ArialNarrow', que si no está declarado en pdfMake.fonts
+     hace que pdfmake lance "Font 'ArialNarrow' in style 'bold' is not defined...".
+     Mapeamos 'ArialNarrow' a los archivos de Roboto ya presentes en el vfs.
+     Idempotente y solo-si-falta, para no pisar una fuente real que otra app embeba. */
+  const ROBOTO_FILES = {
+    normal:'Roboto-Regular.ttf', bold:'Roboto-Medium.ttf',
+    italics:'Roboto-Italic.ttf', bolditalics:'Roboto-MediumItalic.ttf'
+  };
+  function asegurarFuentes(pdfMakeLib){
+    if(!pdfMakeLib) return;
+    pdfMakeLib.fonts = pdfMakeLib.fonts || {};
+    if(!pdfMakeLib.fonts.ArialNarrow) pdfMakeLib.fonts.ArialNarrow = Object.assign({}, ROBOTO_FILES);
+    if(!pdfMakeLib.fonts.Roboto)      pdfMakeLib.fonts.Roboto      = Object.assign({}, ROBOTO_FILES);
+  }
+
   /* Cuenta páginas renderizando sin comprimir (igual criterio que el acta diaria) */
   function contarPaginas(pdfMakeLib, doc){
     return new Promise(function(resolve){
@@ -329,6 +346,7 @@
    */
   async function autoAjustar(pdfMakeLib, d, sfx){
     sfx = sfx || '';
+    asegurarFuentes(pdfMakeLib);
     let lh=1.5;
     for(let fs=FS_MAX; fs>=FS_MIN-0.001; fs-=FS_STEP){
       const doc=construirDoc(d, fs, lh, sfx);
@@ -348,6 +366,7 @@
    * @returns {Promise<{doc:object}>}
    */
   async function combinar(pdfMakeLib, items){
+    asegurarFuentes(pdfMakeLib);
     const lista = Array.isArray(items) ? items : [];
     const styles = {};
     let content = [];
@@ -377,7 +396,7 @@
   return {
     PAGE_W, PAGE_H, LEFT_M, RIGHT_M, TOP_M, BOT_M,
     numLetras, numLetrasFem, numLetrasMasc, capitalizar, formatearCuiLegal,
-    construirDoc, autoAjustar, combinar,
+    construirDoc, autoAjustar, combinar, asegurarFuentes,
     SUBDIRECTORA_NOMBRE, SUBDIRECTORA_CUI, SUBDIRECCION_DIR
   };
 });
