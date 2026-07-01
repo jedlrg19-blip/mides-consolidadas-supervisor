@@ -155,10 +155,13 @@
     <div id="listaLote"><div class="vacio">Aún no has agregado ningún comedor al lote.</div></div>
     <div class="btns" style="margin-top:10px">
       <button class="b-primary" id="btnZip" onclick="descargarLoteZip()" disabled>⬇️ Descargar lote (ZIP)</button>
+      <button class="b-ok" id="btnCombinado" onclick="descargarLoteCombinado()" disabled>📄 Descargar PDF combinado</button>
       <button class="b-ghost" onclick="vaciarLote()">🗑️ Vaciar lote</button>
     </div>
     <p class="hint">El ZIP incluye, por comedor: el PDF borrador, el Excel original y un archivo de datos
-      que Carlos importa directamente en su panel — así no vuelve a escribir nada.</p>
+      que Carlos importa directamente en su panel — así no vuelve a escribir nada. También incluye un
+      PDF combinado de todo el lote para revisión rápida. Con «PDF combinado» lo descargas suelto, y con
+      «⬇️ PDF» en cada comedor bajas solo esa acta sin armar el ZIP.</p>
   </div>
 
 </div>
@@ -217,6 +220,8 @@ function val(id){ const el=document.getElementById(id); return el? el.value.trim
 function hoyISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function horaHM(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function slug(t){ return String(t||'comedor').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'') || 'comedor'; }
+/* Nombre base ordenado para archivos/carpetas: NN_Departamento_Comedor (facilita ordenar) */
+function baseNombre(item, i){ return String(i+1).padStart(2,'0')+'_'+slug(item.departamento)+'_'+slug(item.comedor); }
 
 /* ═══════════════ localStorage — Mis datos de Supervisor ═══════════════ */
 const KEY_SUP='mides_consolidada_supervisor_v1';
@@ -447,10 +452,30 @@ async function verPdfLote(idx){
     });
   }catch(e){ setBtns(false); alert('No se pudo generar la vista previa: '+e); }
 }
+async function descargarPdfItem(idx){
+  const item=lote[idx];
+  setBtns(true);
+  try{
+    const {doc}=await MotorConsolidada.autoAjustar(pdfMake, item);
+    pdfMake.createPdf(doc).download(baseNombre(item, idx)+'_borrador.pdf');
+  }catch(e){ alert('No se pudo generar el PDF: '+e); }
+  finally{ setBtns(false); }
+}
+async function descargarLoteCombinado(){
+  if(!lote.length) return;
+  const btn=document.getElementById('btnCombinado');
+  btn.disabled=true; btn.textContent='⏳ Generando PDF…';
+  try{
+    const {doc}=await MotorConsolidada.combinar(pdfMake, lote);
+    pdfMake.createPdf(doc).download('Lote_completo_'+slug(val('sup_nombre')||'supervisor')+'_'+hoyISO()+'.pdf');
+  }catch(e){ alert('❌ No se pudo generar el PDF combinado: '+e); }
+  finally{ btn.disabled=lote.length===0; btn.textContent='📄 Descargar PDF combinado'; }
+}
 function renderLote(){
   const cont=document.getElementById('listaLote');
   document.getElementById('contadorLote').textContent=lote.length;
   document.getElementById('btnZip').disabled = lote.length===0;
+  document.getElementById('btnCombinado').disabled = lote.length===0;
   if(!lote.length){ cont.innerHTML='<div class="vacio">Aún no has agregado ningún comedor al lote.</div>'; return; }
   cont.innerHTML='';
   lote.forEach((item,idx)=>{
@@ -460,6 +485,7 @@ function renderLote(){
       item.tot_total+' raciones totales</span></div>'+
       '<div class="acciones">'+
       '<button class="b-ghost" onclick="verPdfLote('+idx+')">👁️ Ver</button>'+
+      '<button class="b-ok" onclick="descargarPdfItem('+idx+')">⬇️ PDF</button>'+
       '<button class="b-danger" onclick="quitarDelLote('+idx+')">🗑️ Quitar</button>'+
       '</div>';
     cont.appendChild(div);
@@ -479,7 +505,7 @@ async function descargarLoteZip(){
 
     for(let i=0;i<lote.length;i++){
       const item=lote[i];
-      const base=slug(item.comedor);
+      const base=baseNombre(item, i);
       const carpeta=zip.folder(base);
       // 1) PDF borrador
       const {doc}=await MotorConsolidada.autoAjustar(pdfMake, item);
@@ -493,6 +519,10 @@ async function descargarLoteZip(){
       manifest.comedores.push({ comedor:item.comedor, departamento:item.departamento,
         municipio:item.municipio, dias:item.filas.length, total_raciones:item.tot_total });
     }
+    // PDF combinado (borrador) de todo el lote, en la raíz del ZIP
+    const {doc:docCombinado}=await MotorConsolidada.combinar(pdfMake, lote);
+    const combinadoBytes=await new Promise(res=>pdfMake.createPdf(docCombinado).getBuffer(b=>res(b)));
+    zip.file('Lote_completo_'+slug(supNombre||'supervisor')+'_'+hoyISO()+'.pdf', combinadoBytes);
     zip.file('manifest.json', JSON.stringify(manifest, null, 2));
 
     const blob=await zip.generateAsync({type:'blob'});

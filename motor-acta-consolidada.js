@@ -119,7 +119,8 @@
    * @param {number} fs - tamaño de fuente del cuerpo a usar en este intento
    * @param {number} lh - interlineado a usar en este intento
    */
-  function construirDoc(d, fs, lh){
+  function construirDoc(d, fs, lh, sfx){
+    sfx = sfx || '';   // sufijo para nombres de estilo (permite combinar varias actas en un solo PDF)
     const fst = Math.max(5.5, Math.round((fs*0.79)*100)/100);   // proporción 7.5/9.5 del original
     const ldt = Math.round(fst*1.5*100)/100;
     const ld  = Math.round(fs*lh*100)/100;
@@ -212,7 +213,7 @@
     const sumCols=rawCols.reduce((a,b)=>a+b,0);
     const widths = rawCols.map(c=>Math.round((W*c/sumCols)*100)/100);
 
-    const P=(t,bold)=>({text:String(t), style: bold?'tabHdr':'tabCell'});
+    const P=(t,bold)=>({text:String(t), style: (bold?'tabHdr':'tabCell')+sfx});
     const body=[];
     body.push([P('No.',1),P('Fecha',1),P('No. de\nActa',1),
       P('Desayunos',1),P('',1),P('',1),P('',1),
@@ -284,8 +285,8 @@
       pageMargins:[LEFT_M, TOP_M, RIGHT_M, BOT_M],
       defaultStyle:{ font:'ArialNarrow' },
       styles:{
-        tabHdr:{ fontSize:fst, lineHeight:1.15, alignment:'center', bold:true },
-        tabCell:{ fontSize:fst, lineHeight:1.15, alignment:'center' }
+        ['tabHdr'+sfx]:{ fontSize:fst, lineHeight:1.15, alignment:'center', bold:true },
+        ['tabCell'+sfx]:{ fontSize:fst, lineHeight:1.15, alignment:'center' }
       },
       content: content
     };
@@ -326,21 +327,57 @@
    * @param {object} d - datos del acta consolidada
    * @returns {Promise<{doc:object, fs:number}>}
    */
-  async function autoAjustar(pdfMakeLib, d){
+  async function autoAjustar(pdfMakeLib, d, sfx){
+    sfx = sfx || '';
     let lh=1.5;
     for(let fs=FS_MAX; fs>=FS_MIN-0.001; fs-=FS_STEP){
-      const doc=construirDoc(d, fs, lh);
+      const doc=construirDoc(d, fs, lh, sfx);
       const pags=await contarPaginas(pdfMakeLib, doc);
-      if(pags<=1) return { doc: construirDoc(d, fs, lh), fs: Math.round(fs*100)/100 };
+      if(pags<=1) return { doc: construirDoc(d, fs, lh, sfx), fs: Math.round(fs*100)/100 };
       lh=Math.max(1.05, lh-0.03);
     }
-    return { doc: construirDoc(d, FS_MIN, 1.05), fs: FS_MIN };
+    return { doc: construirDoc(d, FS_MIN, 1.05, sfx), fs: FS_MIN };
+  }
+
+  /**
+   * Combina varias actas consolidadas (borradores) en un solo docDefinition,
+   * una acta por página. Cada acta se auto-ajusta a su propio tamaño de fuente
+   * y sus estilos de tabla se aíslan con un sufijo para no colisionar.
+   * @param {object} pdfMakeLib - instancia global de pdfMake
+   * @param {Array<object>} items - lista de datos de actas
+   * @returns {Promise<{doc:object}>}
+   */
+  async function combinar(pdfMakeLib, items){
+    const lista = Array.isArray(items) ? items : [];
+    const styles = {};
+    let content = [];
+    let base = null;
+    for(let i=0;i<lista.length;i++){
+      const { doc } = await autoAjustar(pdfMakeLib, lista[i], '_'+i);
+      if(!base) base = doc;
+      Object.assign(styles, doc.styles);
+      const partes = doc.content.slice();
+      if(content.length && partes.length){
+        partes[0] = Object.assign({}, partes[0], { pageBreak:'before' });
+      }
+      content = content.concat(partes);
+    }
+    if(!base) base = construirDoc({}, FS_MAX, 1.5);
+    const docDefinition = {
+      pageSize: base.pageSize,
+      pageMargins: base.pageMargins,
+      defaultStyle: base.defaultStyle,
+      styles: styles,
+      content: content
+    };
+    if(base.background) docDefinition.background = base.background;
+    return { doc: docDefinition };
   }
 
   return {
     PAGE_W, PAGE_H, LEFT_M, RIGHT_M, TOP_M, BOT_M,
     numLetras, numLetrasFem, numLetrasMasc, capitalizar, formatearCuiLegal,
-    construirDoc, autoAjustar,
+    construirDoc, autoAjustar, combinar,
     SUBDIRECTORA_NOMBRE, SUBDIRECTORA_CUI, SUBDIRECCION_DIR
   };
 });
