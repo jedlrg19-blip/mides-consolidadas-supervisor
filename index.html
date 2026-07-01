@@ -277,40 +277,92 @@ function fechaDMY(d){ return String(d.getDate()).padStart(2,'0')+'-'+String(d.ge
 function ci(v){ if(v===null||v===undefined||v==='') return ''; const n=parseInt(String(v).replace(/\.0$/,''),10); return isNaN(n)?'':n; }
 
 function extraerTablaConsolidada(workbook){
-  let filas=[], totDes=0, totAlm=0, totTotal=0, correlativo='', periodoTxt='';
-  const hoja1=workbook.Sheets['CONTROL DE SUPERVISOR'];
+  let filas=[], totDes=0, totAlm=0, totTotal=0, correlativo='', lote='', periodoTxt='';
+
+  // 1) Localizar la hoja de control (acepta "CONTROL DE SUPERVISOR" y "NO TOCAR CONTROL DE SUPERVISOR")
+  let nombreHoja1=null;
+  for(const n of workbook.SheetNames){ if(n.toUpperCase().indexOf('CONTROL DE SUPERVISOR')>=0){ nombreHoja1=n; break; } }
+  const hoja1 = nombreHoja1 ? workbook.Sheets[nombreHoja1] : null;
+
   if(hoja1){
     const rows=XLSX.utils.sheet_to_json(hoja1,{header:1, raw:true, defval:null});
-    rows.forEach(row=>{
-      const noRaw=row[0]; const noInt=parseInt(String(noRaw),10);
-      const esFilaDatos = noRaw!=null && !isNaN(noInt) && String(noRaw).trim()!=='';
-      if(esFilaDatos){
-        const fechaObj=celdaAFecha(row[1]);
-        filas.push({
-          no:noInt, fecha: fechaObj?fechaISO(fechaObj):'', fecha_fmt: fechaObj?fechaDMY(fechaObj):String(row[1]||''),
-          acta:String(row[2]==null?'':row[2]).replace('.0','').trim(),
-          des_envio:ci(row[3]), des_ini:ci(row[4]), des_fin:ci(row[5]), des_tot:ci(row[6]),
-          alm_envio:ci(row[7]), alm_ini:ci(row[8]), alm_fin:ci(row[9]), alm_tot:ci(row[10]),
-          total:ci(row[11])
-        });
-      } else {
-        const d6=ci(row[6]), d10=ci(row[10]), d11=ci(row[11]);
-        if(d6!=='') totDes=d6; if(d10!=='') totAlm=d10; if(d11!=='') totTotal=d11;
+    const esEntero=(v)=>{ if(v===null||v===undefined||String(v).trim()==='') return false; const n=Number(String(v).trim()); return Number.isFinite(n) && Math.floor(n)===n; };
+
+    // 1a) Detectar la fila de encabezado: col A ~ "No." y col B ~ "FECHA". Los datos empiezan después.
+    let hdr=-1;
+    for(let r=0; r<Math.min(rows.length,30); r++){
+      const a=String((rows[r]&&rows[r][0])||'').toUpperCase().replace(/\./g,'');
+      const b=String((rows[r]&&rows[r][1])||'').toUpperCase();
+      if(a.indexOf('NO')>=0 && b.indexOf('FECHA')>=0){ hdr=r; break; }
+    }
+    // 1b) Primera fila de datos: la primera con col A entera después del header (o la primera entera si no hay header)
+    let r0=-1;
+    const desde = hdr>=0 ? hdr+1 : 0;
+    for(let r=desde; r<rows.length; r++){ if(esEntero(rows[r] && rows[r][0])){ r0=r; break; } }
+    if(r0<0) r0 = (hdr>=0? hdr+3 : 0);
+
+    // 1c) Recorrer datos hasta la fila de "TOTAL"/"TOTALES" o hasta que se acaben las filas numeradas
+    for(let r=r0; r<rows.length; r++){
+      const row=rows[r]||[];
+      const a=row[0];
+      const rowtxt=row.slice(0,12).map(x=>String(x==null?'':x)).join(' ').toUpperCase();
+      if(!esEntero(a)){
+        if(/\bTOTAL(ES)?\b/.test(rowtxt)){
+          const d6=ci(row[6]), d10=ci(row[10]), d11=ci(row[11]);
+          if(d6!=='') totDes=d6; if(d10!=='') totAlm=d10; if(d11!=='') totTotal=d11;
+          break;
+        }
+        if(filas.length) break;  // fila vacía tras los datos: terminamos
+        continue;                // filas vacías antes de los datos: seguimos buscando
       }
-    });
+      const fechaObj=celdaAFecha(row[1]);
+      filas.push({
+        no:parseInt(String(a),10),
+        fecha: fechaObj?fechaISO(fechaObj):'', fecha_fmt: fechaObj?fechaDMY(fechaObj):String(row[1]||''),
+        acta:String(row[2]==null?'':row[2]).replace('.0','').trim(),
+        des_envio:ci(row[3]), des_ini:ci(row[4]), des_fin:ci(row[5]), des_tot:ci(row[6]),
+        alm_envio:ci(row[7]), alm_ini:ci(row[8]), alm_fin:ci(row[9]), alm_tot:ci(row[10]),
+        total:ci(row[11])
+      });
+    }
   }
-  const hoja2=workbook.Sheets['CUADRO INTEGRACION'];
+
+  // 2) Leer metadatos (correlativo, lote, periodo) de CUADRO INTEGRACION buscando por CONTENIDO,
+  //    no por celda fija (cada supervisor los coloca en columnas distintas).
+  let nombreHoja2=null;
+  for(const n of workbook.SheetNames){ if(n.toUpperCase().indexOf('CUADRO INTEGRACION')>=0){ nombreHoja2=n; break; } }
+  const hoja2 = nombreHoja2 ? workbook.Sheets[nombreHoja2] : null;
   if(hoja2){
     const rows2=XLSX.utils.sheet_to_json(hoja2,{header:1, raw:true, defval:''});
-    if(rows2[5] && rows2[5][17]!=null) correlativo=String(rows2[5][17]).trim();
-    if(rows2[6] && rows2[6][0]!=null) periodoTxt=String(rows2[6][0]).trim();
+    const MESES_RE=/\b(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\b/;
+    for(let r=0; r<Math.min(rows2.length,20); r++){
+      const fila=rows2[r]||[];
+      for(let c=0; c<fila.length; c++){
+        const v=fila[c]; if(v==null) continue;
+        const s=String(v).trim(); if(!s) continue;
+        if(!correlativo && /^\d{1,4}-\d{4}$/.test(s)) correlativo=s;
+        const mlote=s.toUpperCase().match(/LOTE\s*:?\s*(\d+)/);
+        if(mlote && !lote) lote=mlote[1];
+        if(!periodoTxt && /\bDEL\b/.test(s.toUpperCase()) && MESES_RE.test(s.toUpperCase())) periodoTxt=s;
+      }
+    }
   }
+
+  // 3) Si no vino la fila de totales, sumamos
   if(!totDes && filas.length){
     totDes=filas.reduce((a,f)=>a+(typeof f.des_tot==='number'?f.des_tot:0),0);
     totAlm=filas.reduce((a,f)=>a+(typeof f.alm_tot==='number'?f.alm_tot:0),0);
     totTotal=totDes+totAlm;
   }
-  return {filas, totDes, totAlm, totTotal, correlativo, periodoTxt};
+
+  // 4) Detectar huecos en la numeración (para avisar al supervisor)
+  let huecos=[];
+  for(let i=1;i<filas.length;i++){
+    const salto=filas[i].no - filas[i-1].no;
+    if(salto>1){ for(let k=filas[i-1].no+1;k<filas[i].no;k++) huecos.push(k); }
+  }
+
+  return {filas, totDes, totAlm, totTotal, correlativo, lote, periodoTxt, huecos};
 }
 
 var excelActual = null; // {bytes: ArrayBuffer, nombre, datos:{filas,totDes,...}}
@@ -340,7 +392,9 @@ function onExcelSeleccionado(ev){
         resumen.style.display='block';
         resumen.innerHTML = '✅ <b>'+datos.filas.length+'</b> día(s) leídos · Desayunos: <b>'+datos.totDes+
           '</b> · Almuerzos: <b>'+datos.totAlm+'</b> · Total: <b>'+datos.totTotal+'</b> raciones'+
-          (datos.correlativo?' · Correlativo: <b>'+escapeHtml(datos.correlativo)+'</b>':'');
+          (datos.correlativo?' · Correlativo: <b>'+escapeHtml(datos.correlativo)+'</b>':'')+
+          (datos.lote?' · Lote: <b>'+escapeHtml(datos.lote)+'</b>':'')+
+          (datos.huecos && datos.huecos.length ? '<br>⚠️ La numeración del Excel salta el/los No.: <b>'+datos.huecos.join(', ')+'</b> (revisa que sea correcto).' : '');
       } else {
         resumen.style.display='block';
         resumen.innerHTML = '⚠️ No se encontraron filas en la hoja "CONTROL DE SUPERVISOR". '+
