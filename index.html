@@ -218,6 +218,8 @@ function val(id){ const el=document.getElementById(id); return el? el.value.trim
 function hoyISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function horaHM(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function slug(t){ return String(t||'comedor').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'') || 'comedor'; }
+/* Escapa texto del usuario antes de insertarlo con innerHTML (evita romper la interfaz). */
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* ═══════════════ localStorage — Mis datos de Supervisor ═══════════════ */
 const KEY_SUP='mides_consolidada_supervisor_v1';
@@ -242,11 +244,18 @@ function precargarSupervisor(){
   if(obj.cui) document.getElementById('sup_cui').value=obj.cui;
 }
 
-/* Solo dígitos en el CUI */
-function soloDigitos(id){
+/* CUI: solo dígitos, formateado en bloques 4-5-4 ("#### ##### ####").
+   El motor (cuiLetrasSolo) divide el CUI por espacios para armar el texto legal,
+   así que conservar los espacios es imprescindible para un acta correcta. */
+function formatearCui(v){
+  const d=String(v==null?'':v).replace(/\D+/g,'').slice(0,13);
+  return [d.slice(0,4), d.slice(4,9), d.slice(9,13)].filter(Boolean).join(' ');
+}
+function formatearCuiInput(id){
   const el=document.getElementById(id); if(!el) return;
   el.setAttribute('inputmode','numeric');
-  el.addEventListener('input', ()=>{ const v0=el.value; const v=v0.replace(/\D+/g,''); if(v!==v0) el.value=v; });
+  el.addEventListener('input', ()=>{ const f=formatearCui(el.value); if(f!==el.value) el.value=f; });
+  el.value=formatearCui(el.value);  // normaliza el valor inicial (p. ej. precargado sin espacios)
 }
 
 /* ═══════════════ Lectura de Excel (replica _extraer_tabla_consolidada de app_web.py) ═══════════════ */
@@ -331,7 +340,7 @@ function onExcelSeleccionado(ev){
         resumen.style.display='block';
         resumen.innerHTML = '✅ <b>'+datos.filas.length+'</b> día(s) leídos · Desayunos: <b>'+datos.totDes+
           '</b> · Almuerzos: <b>'+datos.totAlm+'</b> · Total: <b>'+datos.totTotal+'</b> raciones'+
-          (datos.correlativo?' · Correlativo: <b>'+datos.correlativo+'</b>':'');
+          (datos.correlativo?' · Correlativo: <b>'+escapeHtml(datos.correlativo)+'</b>':'');
       } else {
         resumen.style.display='block';
         resumen.innerHTML = '⚠️ No se encontraron filas en la hoja "CONTROL DE SUPERVISOR". '+
@@ -350,6 +359,7 @@ function onExcelSeleccionado(ev){
 function armarDatosActa(){
   const supNombre=val('sup_nombre'), supCui=val('sup_cui');
   if(!supNombre || !supCui){ alert('⚠️ Completa tu Nombre y CUI en "Mis datos de Supervisor".'); return null; }
+  if(supCui.replace(/\D+/g,'').length!==13){ alert('⚠️ El CUI del supervisor debe tener 13 dígitos.'); return null; }
   const comedor=val('com_comedor'), departamento=val('com_departamento'), municipio=val('com_municipio');
   if(!comedor){ alert('⚠️ Escribe el nombre del Comedor Social o Dependencia.'); return null; }
   if(!departamento || !municipio){ alert('⚠️ Selecciona Departamento y Municipio.'); return null; }
@@ -456,8 +466,8 @@ function renderLote(){
   cont.innerHTML='';
   lote.forEach((item,idx)=>{
     const div=document.createElement('div'); div.className='lote-item';
-    div.innerHTML = '<div class="info"><b>'+item.comedor+'</b> ('+item.modalidad+')'+
-      '<span>'+item.departamento+', '+item.municipio+' · '+item.filas.length+' día(s) · '+
+    div.innerHTML = '<div class="info"><b>'+escapeHtml(item.comedor)+'</b> ('+escapeHtml(item.modalidad)+')'+
+      '<span>'+escapeHtml(item.departamento)+', '+escapeHtml(item.municipio)+' · '+item.filas.length+' día(s) · '+
       item.tot_total+' raciones totales</span></div>'+
       '<div class="acciones">'+
       '<button class="b-ghost" onclick="verPdfLote('+idx+')">👁️ Ver</button>'+
@@ -513,8 +523,8 @@ async function descargarLoteZip(){
 window.addEventListener('DOMContentLoaded', function(){
   poblarDepartamentos('com_departamento');
   populateMunicipios('','com_municipio');
-  soloDigitos('sup_cui');
   precargarSupervisor();
+  formatearCuiInput('sup_cui');   // después de precargar, para normalizar un CUI guardado sin espacios
   cargarLote();
 });
 </script>

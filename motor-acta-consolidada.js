@@ -81,7 +81,11 @@
   // Igual que arriba pero SOLO letras, sin el "(digitos)" final (para textos que ya
   // agregan los dígitos aparte, como el acta consolidada: "CUI {letras} ({digitos})").
   function cuiLetrasSolo(cui){
-    const partes=String(cui==null?'':cui).trim().split(/\s+/).filter(p=>/^\d+$/.test(p));
+    let partes=String(cui==null?'':cui).trim().split(/\s+/).filter(p=>/^\d+$/.test(p));
+    // Respaldo: si llega el CUI de 13 dígitos sin espacios, dividir en bloques 4-5-4.
+    if(partes.length===1 && partes[0].length===13){
+      const d=partes[0]; partes=[d.slice(0,4), d.slice(4,9), d.slice(9)];
+    }
     if(!partes.length) return '';
     return partes.map(p=>{
       const sin=p.replace(/^0+/,''); const nc=p.length-sin.length;
@@ -214,14 +218,29 @@
     const widths = rawCols.map(c=>Math.round((W*c/sumCols)*100)/100);
 
     const P=(t,bold)=>({text:String(t), style: (bold?'tabHdr':'tabCell')+sfx});
+    const H=(t)=>P(t,1);
+    // pdfmake no centra verticalmente; para las cabeceras de una sola línea que
+    // abarcan las dos filas (rowSpan:2) se baja el texto con un margen superior
+    // proporcional a la fuente, para que queden centradas como en el original.
+    const mTop = Math.round(fst*0.75);
     const body=[];
-    body.push([P('No.',1),P('Fecha',1),P('No. de\nActa',1),
-      P('Desayunos',1),P('',1),P('',1),P('',1),
-      P('Almuerzos',1),P('',1),P('',1),P('',1),
-      P('Total\nRaciones',1)]);
-    body.push([P('',1),P('',1),P('',1),
-      P('No.',1),P('Inicio',1),P('Final',1),P('Total',1),
-      P('No.',1),P('Inicio',1),P('Final',1),P('Total',1),P('',1)]);
+    // Encabezado con celdas combinadas (spans), igual que el original de reportlab:
+    // "Desayunos"/"Almuerzos" abarcan sus 4 subcolumnas (colSpan); "No.", "Fecha",
+    // "No. de Acta" y "Total Raciones" abarcan las dos filas de encabezado (rowSpan).
+    body.push([
+      Object.assign(H('No.'),{rowSpan:2, margin:[0,mTop,0,0]}),
+      Object.assign(H('Fecha'),{rowSpan:2, margin:[0,mTop,0,0]}),
+      Object.assign(H('No. de\nActa'),{rowSpan:2}),
+      Object.assign(H('Desayunos'),{colSpan:4}), {}, {}, {},
+      Object.assign(H('Almuerzos'),{colSpan:4}), {}, {}, {},
+      Object.assign(H('Total\nRaciones'),{rowSpan:2})
+    ]);
+    body.push([
+      {}, {}, {},
+      H('No.'),H('Inicio'),H('Final'),H('Total'),
+      H('No.'),H('Inicio'),H('Final'),H('Total'),
+      {}
+    ]);
     if(filas.length){
       filas.forEach(f=>{
         body.push([P(f.no),P(f.fecha_fmt||f.fecha),P(f.acta),
