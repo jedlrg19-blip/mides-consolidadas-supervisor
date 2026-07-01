@@ -81,7 +81,11 @@
   // Igual que arriba pero SOLO letras, sin el "(digitos)" final (para textos que ya
   // agregan los dígitos aparte, como el acta consolidada: "CUI {letras} ({digitos})").
   function cuiLetrasSolo(cui){
-    const partes=String(cui==null?'':cui).trim().split(/\s+/).filter(p=>/^\d+$/.test(p));
+    let partes=String(cui==null?'':cui).trim().split(/\s+/).filter(p=>/^\d+$/.test(p));
+    // Respaldo: si llega el CUI de 13 dígitos sin espacios, dividir en bloques 4-5-4.
+    if(partes.length===1 && partes[0].length===13){
+      const d=partes[0]; partes=[d.slice(0,4), d.slice(4,9), d.slice(9)];
+    }
     if(!partes.length) return '';
     return partes.map(p=>{
       const sin=p.replace(/^0+/,''); const nc=p.length-sin.length;
