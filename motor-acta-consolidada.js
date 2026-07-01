@@ -219,13 +219,17 @@
 
     const P=(t,bold)=>({text:String(t), style: (bold?'tabHdr':'tabCell')+sfx});
     const H=(t)=>P(t,1);
+    // pdfmake no centra verticalmente; para las cabeceras de una sola línea que
+    // abarcan las dos filas (rowSpan:2) se baja el texto con un margen superior
+    // proporcional a la fuente, para que queden centradas como en el original.
+    const mTop = Math.round(fst*0.75);
     const body=[];
     // Encabezado con celdas combinadas (spans), igual que el original de reportlab:
     // "Desayunos"/"Almuerzos" abarcan sus 4 subcolumnas (colSpan); "No.", "Fecha",
     // "No. de Acta" y "Total Raciones" abarcan las dos filas de encabezado (rowSpan).
     body.push([
-      Object.assign(H('No.'),{rowSpan:2}),
-      Object.assign(H('Fecha'),{rowSpan:2}),
+      Object.assign(H('No.'),{rowSpan:2, margin:[0,mTop,0,0]}),
+      Object.assign(H('Fecha'),{rowSpan:2, margin:[0,mTop,0,0]}),
       Object.assign(H('No. de\nActa'),{rowSpan:2}),
       Object.assign(H('Desayunos'),{colSpan:4}), {}, {}, {},
       Object.assign(H('Almuerzos'),{colSpan:4}), {}, {}, {},
