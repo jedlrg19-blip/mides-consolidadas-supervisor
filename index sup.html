@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Actas Consolidadas — Lote de Supervisor</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="motor-acta-consolidada.js"></script>
+<style>
+  :root{
+    --bg:#0b1422; --panel:#0f1b2e; --line:#1e3a5f; --txt:#f1f5f9;
+    --muted:#94a3b8; --accent:#2563eb; --ok:#059669; --warn:#b45309; --danger:#dc2626;
+  }
+  *{box-sizing:border-box;font-family:'Segoe UI',system-ui,Arial,sans-serif;}
+  body{margin:0;background:var(--bg);color:var(--txt);line-height:1.45;}
+  header{background:linear-gradient(90deg,#0d2137,#1e3a5f);padding:18px 20px;
+         border-bottom:2px solid var(--accent);}
+  header h1{margin:0;font-size:19px;}
+  header p{margin:4px 0 0;color:#cbd5e1;font-size:13px;}
+  .wrap{max-width:920px;margin:0 auto;padding:18px;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+        padding:16px 18px;margin-bottom:16px;}
+  .card h2{margin:0 0 4px;font-size:15px;color:#93c5fd;}
+  .card .sub{color:var(--muted);font-size:12px;margin:0 0 12px;}
+  .grid{display:grid;gap:12px;}
+  .g2{grid-template-columns:1fr 1fr;}
+  .g3{grid-template-columns:1fr 1fr 1fr;}
+  @media(max-width:680px){.g2,.g3{grid-template-columns:1fr;}}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;}
+  input,select{width:100%;padding:9px 10px;background:#0b1422;color:var(--txt);
+        border:1px solid var(--line);border-radius:8px;font-size:14px;}
+  input:focus,select:focus{outline:none;border-color:var(--accent);}
+  input[type=file]{padding:7px 8px;}
+  .btns{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;}
+  button{padding:12px 18px;border:none;border-radius:9px;font-size:14px;font-weight:700;
+         cursor:pointer;color:#fff;transition:opacity .15s;}
+  button:disabled{opacity:.5;cursor:not-allowed;}
+  .b-primary{background:var(--accent);}
+  .b-primary:hover:not(:disabled){background:#1d4ed8;}
+  .b-ok{background:var(--ok);}
+  .b-ok:hover:not(:disabled){background:#047857;}
+  .b-ghost{background:#334155;}
+  .b-ghost:hover:not(:disabled){background:#475569;}
+  .b-danger{background:var(--danger);}
+  .b-danger:hover:not(:disabled){background:#b91c1c;}
+  .hint{font-size:12px;color:var(--muted);margin-top:8px;}
+  .saved{font-size:13px;color:#34d399;margin-top:8px;display:none;}
+  .foot{color:var(--muted);font-size:11px;text-align:center;padding:18px;line-height:1.6;}
+  .priv{background:#0d2137;border:1px dashed #475569;border-radius:10px;padding:10px 12px;
+        font-size:12px;color:#cbd5e1;margin-bottom:16px;}
+  .resumen{background:#0d2137;border:1px solid #1e3a5f;border-radius:8px;padding:10px 12px;
+        font-size:13px;margin-top:10px;display:none;}
+  .resumen b{color:#93c5fd;}
+  .lote-item{background:#0d2137;border:1px solid #1e3a5f;border-radius:10px;padding:12px 14px;
+        margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+  .lote-item .info b{color:#e2e8f0;font-size:14px;}
+  .lote-item .info span{display:block;color:var(--muted);font-size:12px;margin-top:2px;}
+  .lote-item .acciones{display:flex;gap:8px;}
+  .lote-item .acciones button{padding:7px 12px;font-size:12px;}
+  .badge{display:inline-block;background:#1e3a5f;color:#93c5fd;border-radius:6px;padding:2px 8px;font-size:11px;margin-left:6px;}
+  .vacio{color:var(--muted);font-size:13px;text-align:center;padding:20px 0;}
+</style>
+</head>
+<body>
+<header>
+  <h1>Actas Consolidadas — Panel de Supervisión</h1>
+  <p>Lote de comedores · Subdirección de Comedores — MIDES</p>
+</header>
+
+<div class="wrap">
+
+  <div class="priv">
+    🔒 <b>Tus datos no salen de este dispositivo.</b> Todo se procesa en tu navegador: el Excel
+    se lee localmente y el PDF se genera aquí mismo. Nada se sube a ningún servidor. Al terminar
+    tu lote, descargas un ZIP para enviárselo a Carlos por tu medio habitual.
+  </div>
+
+  <!-- ───────────── MIS DATOS (SUPERVISOR) ───────────── -->
+  <div class="card">
+    <h2>👤 Mis datos de Supervisor</h2>
+    <p class="sub">Se guardan en este dispositivo y se rellenan solos la próxima vez.</p>
+    <div class="grid g2">
+      <div><label>Nombre completo</label><input id="sup_nombre" placeholder="Nombre del supervisor(a)"></div>
+      <div><label>CUI (13 dígitos)</label><input id="sup_cui" inputmode="numeric" placeholder="0000 00000 0000"></div>
+    </div>
+    <div class="btns">
+      <button class="b-ok" onclick="guardarSupervisor()">💾 Guardar mis datos</button>
+      <button class="b-ghost" onclick="borrarSupervisor()">🗑️ Borrar mis datos</button>
+    </div>
+    <div class="saved" id="savedMsgSup">✅ Datos guardados en este dispositivo.</div>
+  </div>
+
+  <!-- ───────────── DATOS DEL COMEDOR ───────────── -->
+  <div class="card">
+    <h2>📋 Acta Consolidada — Comedor</h2>
+    <p class="sub">Llena estos datos por cada comedor y agrégalo al lote. Puedes repetir para varios comedores.</p>
+    <div class="grid g3">
+      <div><label>Comedor Social o Dependencia</label><input id="com_comedor" placeholder="Ej. Cahabón"></div>
+      <div>
+        <label>Modalidad</label>
+        <select id="com_modalidad"><option>Fijo</option><option>Móvil</option></select>
+      </div>
+      <div>
+        <label>Empresa proveedora</label>
+        <select id="com_empresa">
+          <option>Banquetes de Guatemala, S.A.</option>
+          <option>Tecno Suministros, S.A.</option>
+          <option>Proveedora de Alimentos El Rosario</option>
+        </select>
+      </div>
+      <div>
+        <label>Departamento</label>
+        <select id="com_departamento" onchange="populateMunicipios(this.value,'com_municipio')"><option value="">Selecciona…</option></select>
+      </div>
+      <div>
+        <label>Municipio</label>
+        <select id="com_municipio"><option value="">Selecciona un departamento primero…</option></select>
+      </div>
+      <div>
+        <label>¿Hubo incumplimiento del proveedor?</label>
+        <select id="com_incump"><option>NO</option><option>SI</option></select>
+      </div>
+    </div>
+
+    <div style="margin-top:14px">
+      <label>Excel de consumo (hojas "CONTROL DE SUPERVISOR" y "CUADRO INTEGRACION")</label>
+      <input type="file" id="com_excel" accept=".xlsx,.xls" onchange="onExcelSeleccionado(event)">
+    </div>
+    <div class="resumen" id="resumenExcel"></div>
+
+    <div class="btns" style="margin-top:14px">
+      <button class="b-ghost" id="btnPreview" onclick="vistaPreviaComedor()">👁️ Vista previa (borrador)</button>
+      <button class="b-primary" id="btnAgregar" onclick="agregarAlLote()">➕ Agregar al lote</button>
+    </div>
+  </div>
+
+  <!-- ───────────── VISTA PREVIA ───────────── -->
+  <div class="card" id="previewCard" style="display:none">
+    <h2>👁️ Vista previa del Acta Consolidada</h2>
+    <p class="sub" id="previewSub">Borrador sin número de acta (marca de agua "BORRADOR").</p>
+    <iframe id="previewFrame" style="width:100%;height:560px;border:1px solid var(--line);
+            border-radius:8px;background:#fff"></iframe>
+    <div class="btns" style="margin-top:12px">
+      <button class="b-ghost" onclick="cerrarPreview()">✖ Cerrar vista previa</button>
+    </div>
+  </div>
+
+  <!-- ───────────── LOTE ───────────── -->
+  <div class="card">
+    <h2>📦 Lote de Actas Consolidadas <span class="badge" id="contadorLote">0</span></h2>
+    <p class="sub">Estos comedores se incluirán en el ZIP que le envías a Carlos.</p>
+    <div id="listaLote"><div class="vacio">Aún no has agregado ningún comedor al lote.</div></div>
+    <div class="btns" style="margin-top:10px">
+      <button class="b-primary" id="btnZip" onclick="descargarLoteZip()" disabled>⬇️ Descargar lote (ZIP)</button>
+      <button class="b-ghost" onclick="vaciarLote()">🗑️ Vaciar lote</button>
+    </div>
+    <p class="hint">El ZIP incluye, por comedor: el PDF borrador, el Excel original y un archivo de datos
+      que Carlos importa directamente en su panel — así no vuelve a escribir nada.</p>
+  </div>
+
+</div>
+
+<div class="foot">
+  Actas Consolidadas — MIDES · Subdirección de Comedores.<br>
+  Página estática: no envía ni almacena datos en ningún servidor.<br>
+  <span style="opacity:.6">App Supervisores v1</span>
+</div>
+
+<script>
+/* ═══════════════ Catálogo de departamentos y municipios (igual que el acta diaria) ═══════════════ */
+const GUATEMALA_DATA = {
+  "Alta Verapaz": ["Chahal","Chisec","Cobán","Fray Bartolomé de las Casas","Lanquín","Panzós","Raxruhá","San Cristóbal Verapaz","San Juan Chamelco","San Pedro Carchá","Santa Catalina La Tinta","Santa Cruz Verapaz","Santa María Cahabón","Senahú","Tactic","Tamahú","Tucurú"],
+  "Baja Verapaz": ["Cubulco","Granados","Purulhá","Rabinal","Salamá","San Jerónimo","San Miguel Chicaj","Santa Cruz el Chol"],
+  "Chimaltenango": ["Acatenango","Chimaltenango","El Tejar","Parramos","Patzicía","Patzún","Pochuta","San Andrés Itzapa","San José Poaquíl","San Juan Comalapa","San Martín Jilotepeque","San Pedro Yepocapa","Santa Apolonia","Santa Cruz Balanyá","Tecpán Guatemala","Zaragoza"],
+  "Chiquimula": ["Camotán","Chiquimula","Concepción Las Minas","Esquipulas","Ipala","Jocotán","Olopa","Quetzaltepeque","San Jacinto","San José La Arada","San Juan Ermita"],
+  "El Progreso": ["El Jícaro","Guastatoya","Morazán","San Agustín Acasaguastlán","San Antonio La Paz","San Cristóbal Acasaguastlán","Sanarate","Sansare"],
+  "Escuintla": ["Escuintla","Guanagazapa","Iztapa","La Democracia","La Gomera","Masagua","Nueva Concepción","Palín","San José","San Vicente Pacaya","Santa Lucía Cotzumalguapa","Sipacate","Siquinalá","Tiquisate"],
+  "Guatemala": ["Amatitlán","Chinautla","Chuarrancho","Fraijanes","Guatemala","Mixco","Palencia","San José del Golfo","San José Pinula","San Juan Sacatepéquez","San Miguel Petapa","San Pedro Ayampuc","San Pedro Sacatepéquez","San Raymundo","Santa Catarina Pinula","Villa Canales","Villa Nueva"],
+  "Huehuetenango": ["Aguacatán","Chiantla","Colotenango","Concepción Huista","Cuilco","Huehuetenango","Jacaltenango","La Democracia","La Libertad","Malacatancito","Nentón","Petatán","San Antonio Huista","San Gaspar Ixchil","San Ildefonso Ixtahuacán","San Juan Atitán","San Juan Ixcoy","San Mateo Ixtatán","San Miguel Acatán","San Pedro Nécta","San Pedro Soloma","San Rafael La Independencia","San Rafael Pétzal","San Sebastián Coatán","San Sebastián Huehuetenango","Santa Ana Huista","Santa Bárbara","Santa Cruz Barillas","Santa Eulalia","Santiago Chimaltenango","Tectitán","Todos Santos Cuchumatán","Unión Cantinil"],
+  "Izabal": ["El Estor","Livingston","Los Amates","Morales","Puerto Barrios"],
+  "Jalapa": ["Jalapa","Mataquescuintla","Monjas","San Carlos Alzatate","San Luis Jilotepeque","San Manuel Chaparrón","San Pedro Pinula"],
+  "Jutiapa": ["Agua Blanca","Asunción Mita","Atescatempa","Comapa","Conguaco","El Adelanto","El Progreso","Jalpatagua","Jerez","Jutiapa","Moyuta","Pasaco","Quesada","San José Acatempa","Santa Catarina Mita","Yupiltepeque","Zapotitlán"],
+  "Petén": ["Dolores","El Chal","Flores","La Libertad","Las Cruces","Melchor de Mencos","Poptún","San Andrés","San Benito","San Francisco","San José","San Luis","Santa Ana","Sayaxché"],
+  "Quetzaltenango": ["Almolonga","Cabricán","Cajolá","Cantel","Coatepeque","Colomba","Concepción Chiquirichapa","El Palmar","Flores Costa Cuca","Génova","Huitán","La Esperanza","Olintepeque","Palestina de Los Altos","Quetzaltenango","Salcajá","San Carlos Sija","San Francisco La Unión","San Juan Ostuncalco","San Martín Sacatepéquez","San Mateo","San Miguel Sigüilá","Sibilia","Zunil"],
+  "Quiché": ["Canillá","Chajul","Chicamán","Chiché","Chinique","Cunén","Ixcán","Joyabaj","Nebaj","Pachalum","Patzité","Sacapulas","San Andrés Sajcabajá","San Antonio Ilotenango","San Bartolomé Jocotenango","San Juan Cotzal","San Pedro Jocopilas","Santa Cruz del Quiché","Santo Tomás Chichicastenango","Uspantán","Zacualpa"],
+  "Retalhuleu": ["Champerico","El Asintal","Nuevo San Carlos","Retalhuleu","San Andrés Villa Seca","San Felipe","San Martín Zapotitlán","San Sebastián","Santa Cruz Muluá"],
+  "Sacatepéquez": ["Alotenango","Antigua Guatemala","Ciudad Vieja","Jocotenango","Magdalena Milpas Altas","Pastores","San Antonio Aguas Calientes","San Bartolomé Milpas Altas","San Lucas Sacatepéquez","San Miguel Dueñas","Santa Catarina Barahona","Santa Lucía Milpas Altas","Santa María de Jesús","Santiago Sacatepéquez","Santo Domingo Xenacoj","Sumpango"],
+  "San Marcos": ["Ayutla","Catarina","Comitancillo","Concepción Tutuapa","El Quetzal","El Tumbador","Esquipulas Palo Gordo","Ixchiguán","La Blanca","La Reforma","Malacatán","Nuevo Progreso","Ocós","Pajapita","Río Blanco","San Antonio Sacatepéquez","San Cristóbal Cucho","San José El Rodeo","San José Ojetenam","San Lorenzo","San Marcos","San Miguel Ixtahuacán","San Pablo","San Pedro Sacatepéquez","San Rafael Pie de la Cuesta","Sibinal","Sipacapa","Tacaná","Tajumulco","Tejutla"],
+  "Santa Rosa": ["Barberena","Casillas","Chiquimulilla","Cuilapa","Guazacapán","Nueva Santa Rosa","Oratorio","Pueblo Nuevo Viñas","San Juan Tecuaco","San Rafael Las Flores","Santa Cruz Naranjo","Santa María Ixhuatán","Santa Rosa de Lima","Taxisco"],
+  "Sololá": ["Concepción","Nahualá","Panajachel","San Andrés Semetabaj","San Antonio Palopó","San José Chacayá","San Juan La Laguna","San Lucas Tolimán","San Marcos La Laguna","San Pablo La Laguna","San Pedro La Laguna","Santa Catarina Ixtahuacán","Santa Catarina Palopó","Santa Clara La Laguna","Santa Cruz La Laguna","Santa Lucía Utatlán","Santa María Visitación","Santiago Atitlán","Sololá"],
+  "Suchitepéquez": ["Chicacao","Cuyotenango","Mazatenango","Patulul","Pueblo Nuevo","Río Bravo","Samayac","San Antonio Suchitepéquez","San Bernardino","San Francisco Zapotitlán","San Gabriel","San José El Ídolo","San José La Máquina","San Juan Bautista","San Lorenzo","San Miguel Panán","San Pablo Jocopilas","Santa Bárbara","Santo Domingo Suchitepéquez","Santo Tomás La Unión","Zunilito"],
+  "Totonicapán": ["Momostenango","San Andrés Xecul","San Bartolo","San Cristóbal Totonicapán","San Francisco El Alto","Santa Lucía La Reforma","Santa María Chiquimula","Totonicapán"],
+  "Zacapa": ["Cabañas","Estanzuela","Gualán","Huité","La Unión","Río Hondo","San Diego","San Jorge","Teculután","Usumatlán","Zacapa"]
+};
+function poblarDepartamentos(selectId){
+  const sel=document.getElementById(selectId); if(!sel) return;
+  Object.keys(GUATEMALA_DATA).sort((a,b)=>a.localeCompare(b,'es')).forEach(dep=>{
+    const o=document.createElement('option'); o.value=dep; o.textContent=dep; sel.appendChild(o);
+  });
+}
+function populateMunicipios(dep, munSelId, preselect){
+  const sel=document.getElementById(munSelId); if(!sel) return;
+  const lista=GUATEMALA_DATA[dep]||[];
+  sel.innerHTML='';
+  const ph=document.createElement('option'); ph.value='';
+  ph.textContent = lista.length ? 'Selecciona un municipio…' : 'Selecciona un departamento primero…';
+  sel.appendChild(ph);
+  lista.forEach(m=>{ const o=document.createElement('option'); o.value=m; o.textContent=m; sel.appendChild(o); });
+  if(preselect && lista.includes(preselect)) sel.value=preselect;
+}
+
+/* ═══════════════ Helpers ═══════════════ */
+function val(id){ const el=document.getElementById(id); return el? el.value.trim() : ''; }
+function hoyISO(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function horaHM(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function slug(t){ return String(t||'comedor').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'') || 'comedor'; }
+
+/* ═══════════════ localStorage — Mis datos de Supervisor ═══════════════ */
+const KEY_SUP='mides_consolidada_supervisor_v1';
+function guardarSupervisor(){
+  const obj={nombre:val('sup_nombre'), cui:val('sup_cui')};
+  try{
+    localStorage.setItem(KEY_SUP, JSON.stringify(obj));
+    const m=document.getElementById('savedMsgSup'); m.style.display='block';
+    setTimeout(()=>m.style.display='none', 2500);
+  }catch(e){ alert('No se pudieron guardar los datos: '+e); }
+}
+function borrarSupervisor(){
+  try{ localStorage.removeItem(KEY_SUP); }catch(e){}
+  document.getElementById('sup_nombre').value='';
+  document.getElementById('sup_cui').value='';
+}
+function precargarSupervisor(){
+  let obj=null;
+  try{ obj=JSON.parse(localStorage.getItem(KEY_SUP)||'null'); }catch(e){}
+  if(!obj) return;
+  if(obj.nombre) document.getElementById('sup_nombre').value=obj.nombre;
+  if(obj.cui) document.getElementById('sup_cui').value=obj.cui;
+}
+
+/* Solo dígitos en el CUI */
+function soloDigitos(id){
+  const el=document.getElementById(id); if(!el) return;
+  el.setAttribute('inputmode','numeric');
+  el.addEventListener('input', ()=>{ const v0=el.value; const v=v0.replace(/\D+/g,''); if(v!==v0) el.value=v; });
+}
+
+/* ═══════════════ Lectura de Excel (replica _extraer_tabla_consolidada de app_web.py) ═══════════════ */
+function excelSerialADate(n){ return new Date(Math.round((n-25569)*86400*1000)); }
+function esFecha(v){ return v && Object.prototype.toString.call(v)==='[object Date]' && !isNaN(v); }
+function celdaAFecha(v){
+  if(esFecha(v)) return v;
+  if(typeof v==='number') return excelSerialADate(v);
+  if(typeof v==='string'){
+    const s=v.trim();
+    let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return new Date(+m[1],+m[2]-1,+m[3]);
+    m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/); if(m) return new Date(+m[3],+m[2]-1,+m[1]);
+    const d=new Date(s); if(!isNaN(d)) return d;
+  }
+  return null;
+}
+function fechaISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function fechaDMY(d){ return String(d.getDate()).padStart(2,'0')+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+d.getFullYear(); }
+function ci(v){ if(v===null||v===undefined||v==='') return ''; const n=parseInt(String(v).replace(/\.0$/,''),10); return isNaN(n)?'':n; }
+
+function extraerTablaConsolidada(workbook){
+  let filas=[], totDes=0, totAlm=0, totTotal=0, correlativo='', periodoTxt='';
+  const hoja1=workbook.Sheets['CONTROL DE SUPERVISOR'];
+  if(hoja1){
+    const rows=XLSX.utils.sheet_to_json(hoja1,{header:1, raw:true, defval:null});
+    rows.forEach(row=>{
+      const noRaw=row[0]; const noInt=parseInt(String(noRaw),10);
+      const esFilaDatos = noRaw!=null && !isNaN(noInt) && String(noRaw).trim()!=='';
+      if(esFilaDatos){
+        const fechaObj=celdaAFecha(row[1]);
+        filas.push({
+          no:noInt, fecha: fechaObj?fechaISO(fechaObj):'', fecha_fmt: fechaObj?fechaDMY(fechaObj):String(row[1]||''),
+          acta:String(row[2]==null?'':row[2]).replace('.0','').trim(),
+          des_envio:ci(row[3]), des_ini:ci(row[4]), des_fin:ci(row[5]), des_tot:ci(row[6]),
+          alm_envio:ci(row[7]), alm_ini:ci(row[8]), alm_fin:ci(row[9]), alm_tot:ci(row[10]),
+          total:ci(row[11])
+        });
+      } else {
+        const d6=ci(row[6]), d10=ci(row[10]), d11=ci(row[11]);
+        if(d6!=='') totDes=d6; if(d10!=='') totAlm=d10; if(d11!=='') totTotal=d11;
+      }
+    });
+  }
+  const hoja2=workbook.Sheets['CUADRO INTEGRACION'];
+  if(hoja2){
+    const rows2=XLSX.utils.sheet_to_json(hoja2,{header:1, raw:true, defval:''});
+    if(rows2[5] && rows2[5][17]!=null) correlativo=String(rows2[5][17]).trim();
+    if(rows2[6] && rows2[6][0]!=null) periodoTxt=String(rows2[6][0]).trim();
+  }
+  if(!totDes && filas.length){
+    totDes=filas.reduce((a,f)=>a+(typeof f.des_tot==='number'?f.des_tot:0),0);
+    totAlm=filas.reduce((a,f)=>a+(typeof f.alm_tot==='number'?f.alm_tot:0),0);
+    totTotal=totDes+totAlm;
+  }
+  return {filas, totDes, totAlm, totTotal, correlativo, periodoTxt};
+}
+
+var excelActual = null; // {bytes: ArrayBuffer, nombre, datos:{filas,totDes,...}}
+
+function arrayBufferABase64(buf){
+  let binary=''; const bytes=new Uint8Array(buf);
+  for(let i=0;i<bytes.byteLength;i++) binary+=String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+function base64AArrayBuffer(b64){
+  const binary=atob(b64); const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+function onExcelSeleccionado(ev){
+  const file=ev.target.files[0];
+  const resumen=document.getElementById('resumenExcel');
+  if(!file){ excelActual=null; resumen.style.display='none'; return; }
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const wb=XLSX.read(e.target.result, {type:'array', cellDates:true});
+      const datos=extraerTablaConsolidada(wb);
+      excelActual={ bytes:e.target.result, nombre:file.name, datos:datos };
+      if(datos.filas.length){
+        resumen.style.display='block';
+        resumen.innerHTML = '✅ <b>'+datos.filas.length+'</b> día(s) leídos · Desayunos: <b>'+datos.totDes+
+          '</b> · Almuerzos: <b>'+datos.totAlm+'</b> · Total: <b>'+datos.totTotal+'</b> raciones'+
+          (datos.correlativo?' · Correlativo: <b>'+datos.correlativo+'</b>':'');
+      } else {
+        resumen.style.display='block';
+        resumen.innerHTML = '⚠️ No se encontraron filas en la hoja "CONTROL DE SUPERVISOR". '+
+          'Verifica que el archivo tenga esa hoja con el formato correcto.';
+      }
+    }catch(err){
+      excelActual=null;
+      resumen.style.display='block';
+      resumen.innerHTML = '❌ No se pudo leer el archivo: '+err;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* ═══════════════ Armar objeto de datos para el motor ═══════════════ */
+function armarDatosActa(){
+  const supNombre=val('sup_nombre'), supCui=val('sup_cui');
+  if(!supNombre || !supCui){ alert('⚠️ Completa tu Nombre y CUI en "Mis datos de Supervisor".'); return null; }
+  const comedor=val('com_comedor'), departamento=val('com_departamento'), municipio=val('com_municipio');
+  if(!comedor){ alert('⚠️ Escribe el nombre del Comedor Social o Dependencia.'); return null; }
+  if(!departamento || !municipio){ alert('⚠️ Selecciona Departamento y Municipio.'); return null; }
+  if(!excelActual || !excelActual.datos.filas.length){ alert('⚠️ Sube el Excel de consumo con datos válidos antes de continuar.'); return null; }
+  return {
+    comedor, modalidad: val('com_modalidad'), departamento, municipio,
+    empresa: val('com_empresa'), incumplimiento: val('com_incump'),
+    supervisor: supNombre, supervisor_cui: supCui,
+    filas: excelActual.datos.filas, tot_des: excelActual.datos.totDes,
+    tot_alm: excelActual.datos.totAlm, tot_total: excelActual.datos.totTotal,
+    correlativo: excelActual.datos.correlativo, periodo_txt: excelActual.datos.periodoTxt,
+    no_acta:'SN', hora_acta: horaHM(), fecha_emision: null
+  };
+}
+
+/* ═══════════════ Vista previa ═══════════════ */
+async function vistaPreviaComedor(){
+  const data=armarDatosActa(); if(!data) return;
+  setBtns(true);
+  try{
+    const {doc}=await MotorConsolidada.autoAjustar(pdfMake, data);
+    pdfMake.createPdf(doc).getDataUrl(url=>{
+      document.getElementById('previewFrame').src=url;
+      document.getElementById('previewCard').style.display='block';
+      document.getElementById('previewCard').scrollIntoView({behavior:'smooth',block:'start'});
+      setBtns(false);
+    });
+  }catch(e){ setBtns(false); alert('No se pudo generar la vista previa: '+e); }
+}
+function cerrarPreview(){
+  document.getElementById('previewCard').style.display='none';
+  document.getElementById('previewFrame').src='';
+}
+function setBtns(loading){
+  document.getElementById('btnPreview').disabled=loading;
+  document.getElementById('btnAgregar').disabled=loading;
+  document.getElementById('btnPreview').textContent = loading? '⏳ Generando…' : '👁️ Vista previa (borrador)';
+}
+
+/* ═══════════════ Lote (localStorage) ═══════════════ */
+const KEY_LOTE='mides_consolidada_lote_v1';
+var lote=[];
+function cargarLote(){
+  try{ lote=JSON.parse(localStorage.getItem(KEY_LOTE)||'[]'); }catch(e){ lote=[]; }
+  renderLote();
+}
+function guardarLoteStorage(){
+  try{ localStorage.setItem(KEY_LOTE, JSON.stringify(lote)); }
+  catch(e){ alert('⚠️ No se pudo guardar el lote en este dispositivo (puede que sea muy grande). '+
+    'Descarga el ZIP pronto para no perder tu avance.'); }
+}
+function agregarAlLote(){
+  const data=armarDatosActa(); if(!data) return;
+  const item = Object.assign({}, data, {
+    excel_nombre: excelActual.nombre,
+    excel_b64: arrayBufferABase64(excelActual.bytes),
+    agregado_en: new Date().toISOString()
+  });
+  lote.push(item);
+  guardarLoteStorage();
+  renderLote();
+  // Limpiar el formulario del comedor para el siguiente
+  document.getElementById('com_comedor').value='';
+  document.getElementById('com_departamento').value='';
+  populateMunicipios('','com_municipio');
+  document.getElementById('com_incump').value='NO';
+  document.getElementById('com_excel').value='';
+  document.getElementById('resumenExcel').style.display='none';
+  excelActual=null;
+  cerrarPreview();
+  alert('✅ "'+item.comedor+'" agregado al lote.');
+}
+function quitarDelLote(idx){
+  if(!confirm('¿Quitar este comedor del lote?')) return;
+  lote.splice(idx,1);
+  guardarLoteStorage();
+  renderLote();
+}
+function vaciarLote(){
+  if(!lote.length) return;
+  if(!confirm('¿Vaciar todo el lote? Esta acción no se puede deshacer.')) return;
+  lote=[];
+  guardarLoteStorage();
+  renderLote();
+}
+async function verPdfLote(idx){
+  const item=lote[idx];
+  setBtns(true);
+  try{
+    const {doc}=await MotorConsolidada.autoAjustar(pdfMake, item);
+    pdfMake.createPdf(doc).getDataUrl(url=>{
+      document.getElementById('previewFrame').src=url;
+      document.getElementById('previewCard').style.display='block';
+      document.getElementById('previewCard').scrollIntoView({behavior:'smooth',block:'start'});
+      setBtns(false);
+    });
+  }catch(e){ setBtns(false); alert('No se pudo generar la vista previa: '+e); }
+}
+function renderLote(){
+  const cont=document.getElementById('listaLote');
+  document.getElementById('contadorLote').textContent=lote.length;
+  document.getElementById('btnZip').disabled = lote.length===0;
+  if(!lote.length){ cont.innerHTML='<div class="vacio">Aún no has agregado ningún comedor al lote.</div>'; return; }
+  cont.innerHTML='';
+  lote.forEach((item,idx)=>{
+    const div=document.createElement('div'); div.className='lote-item';
+    div.innerHTML = '<div class="info"><b>'+item.comedor+'</b> ('+item.modalidad+')'+
+      '<span>'+item.departamento+', '+item.municipio+' · '+item.filas.length+' día(s) · '+
+      item.tot_total+' raciones totales</span></div>'+
+      '<div class="acciones">'+
+      '<button class="b-ghost" onclick="verPdfLote('+idx+')">👁️ Ver</button>'+
+      '<button class="b-danger" onclick="quitarDelLote('+idx+')">🗑️ Quitar</button>'+
+      '</div>';
+    cont.appendChild(div);
+  });
+}
+
+/* ═══════════════ Descargar lote en ZIP ═══════════════ */
+async function descargarLoteZip(){
+  if(!lote.length) return;
+  const btn=document.getElementById('btnZip');
+  btn.disabled=true; btn.textContent='⏳ Generando ZIP…';
+  try{
+    const zip=new JSZip();
+    const supNombre=val('sup_nombre'), supCui=val('sup_cui');
+    const manifest={ supervisor:supNombre, supervisor_cui:supCui,
+      generado_en:new Date().toISOString(), comedores:[] };
+
+    for(let i=0;i<lote.length;i++){
+      const item=lote[i];
+      const base=slug(item.comedor);
+      const carpeta=zip.folder(base);
+      // 1) PDF borrador
+      const {doc}=await MotorConsolidada.autoAjustar(pdfMake, item);
+      const pdfBytes=await new Promise(res=>pdfMake.createPdf(doc).getBuffer(b=>res(b)));
+      carpeta.file(base+'_borrador.pdf', pdfBytes);
+      // 2) Excel original
+      carpeta.file(item.excel_nombre || (base+'_datos.xlsx'), item.excel_b64, {base64:true});
+      // 3) JSON de datos estructurados (para importar en la app de Carlos)
+      const datosJson=Object.assign({}, item); delete datosJson.excel_b64;
+      carpeta.file(base+'_datos.json', JSON.stringify(datosJson, null, 2));
+      manifest.comedores.push({ comedor:item.comedor, departamento:item.departamento,
+        municipio:item.municipio, dias:item.filas.length, total_raciones:item.tot_total });
+    }
+    zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+
+    const blob=await zip.generateAsync({type:'blob'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    const fecha=hoyISO();
+    a.href=url; a.download='Lote_Consolidadas_'+slug(supNombre||'supervisor')+'_'+fecha+'.zip';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+  }catch(e){
+    alert('❌ No se pudo generar el ZIP: '+e);
+  }finally{
+    btn.disabled=false; btn.textContent='⬇️ Descargar lote (ZIP)';
+  }
+}
+
+window.addEventListener('DOMContentLoaded', function(){
+  poblarDepartamentos('com_departamento');
+  populateMunicipios('','com_municipio');
+  soloDigitos('sup_cui');
+  precargarSupervisor();
+  cargarLote();
+});
+</script>
+</body>
+</html>
