@@ -7,9 +7,16 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>window.XLSX_LECTURA = window.XLSX;</script>
+<!-- xlsx-js-style: superconjunto de SheetJS que SÍ escribe estilos (bordes, rellenos, negritas).
+     Se usa SOLO para generar el XLSX de la Matriz. Se guarda como XLSXStyle y se restaura
+     XLSX a la versión original para que la LECTURA del flujo de actas quede intacta. -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script>window.XLSXStyle = window.XLSX; window.XLSX = window.XLSX_LECTURA;</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="fuente-arialnarrow.js"></script>
-<script src="motor-acta-consolidada.js"></script>
+<script src="fuente-arialnarrow.js?v=20260705"></script>
+<script src="motor-acta-consolidada.js?v=20260705"></script>
+<script src="matriz-consolidada.js?v=20260705"></script>
 <style>
   :root{
     --bg:#0b1422; --panel:#0f1b2e; --line:#1e3a5f; --txt:#f1f5f9;
@@ -48,6 +55,14 @@
   .b-danger{background:var(--danger);}
   .b-danger:hover:not(:disabled){background:#b91c1c;}
   .hint{font-size:12px;color:var(--muted);margin-top:8px;}
+  /* Pestañas de tipo de acta (Normal / FEGUA) */
+  .tabs-tipo{display:flex;gap:12px;margin-top:4px;flex-wrap:wrap;}
+  .tab-tipo{flex:1;min-width:200px;display:flex;align-items:center;justify-content:center;gap:8px;
+    padding:14px 18px;border:1px solid var(--line);border-radius:10px;background:#0b1422;
+    color:var(--muted);font-size:15px;font-weight:700;cursor:pointer;transition:all .15s;}
+  .tab-tipo:hover{border-color:var(--accent);color:var(--txt);}
+  .tab-tipo.activa{background:var(--accent);color:#fff;border-color:var(--accent);
+    box-shadow:0 2px 10px rgba(37,99,235,.35);}
   .saved{font-size:13px;color:#34d399;margin-top:8px;display:none;}
   .foot{color:var(--muted);font-size:11px;text-align:center;padding:18px;line-height:1.6;}
   .priv{background:#0d2137;border:1px dashed #475569;border-radius:10px;padding:10px 12px;
@@ -78,6 +93,20 @@
     se lee localmente y el PDF se genera aquí mismo. Nada se sube a ningún servidor. Al terminar
     tu lote, descargas un ZIP para enviárselo a Carlos por tu medio habitual.
   </div>
+
+  <!-- ───────────── SELECTOR DE MODO (pestañas) ───────────── -->
+  <div style="margin-bottom:16px">
+    <div class="tabs-tipo">
+      <div class="tab-tipo activa" id="tab_normal" onclick="seleccionarTipoActa('normal')">📄 Acta Consolidada Normal</div>
+      <div class="tab-tipo" id="tab_fegua" onclick="seleccionarTipoActa('fegua')">🏛️ Comedor FEGUA</div>
+      <div class="tab-tipo" id="tab_matriz" onclick="seleccionarTipoActa('matriz')">📊 Matriz Consolidada</div>
+    </div>
+    <input type="hidden" id="com_tipo_acta" value="normal">
+    <p class="sub" id="hintTipoActa" style="margin:8px 0 0">Modo estándar para los comedores normales.</p>
+  </div>
+
+  <!-- ═══════════════ MODO ACTA (Normal / FEGUA) ═══════════════ -->
+  <div id="modoActa">
 
   <!-- ───────────── MIS DATOS (SUPERVISOR) ───────────── -->
   <div class="card">
@@ -124,6 +153,18 @@
         <label>¿Hubo incumplimiento del proveedor?</label>
         <select id="com_incump"><option>NO</option><option>SI</option></select>
       </div>
+      <div>
+        <label>Correlativo del cuadro (opcional)</label>
+        <input id="com_correlativo" value="" placeholder="Ej. 102-2026 (déjalo vacío para usar el del Excel)" maxlength="12">
+      </div>
+      <div id="wrap_serie_des">
+        <label>Serie de envío — Desayuno</label>
+        <input id="com_serie_des" value="CM" placeholder="Ej. CM, A, NV, NM, C1" maxlength="6">
+      </div>
+      <div id="wrap_serie_alm">
+        <label>Serie de envío — Almuerzo</label>
+        <input id="com_serie_alm" value="CM" placeholder="Ej. CM, A, NV, NM, C1" maxlength="6">
+      </div>
     </div>
 
     <div style="margin-top:14px">
@@ -162,7 +203,77 @@
       que Carlos importa directamente en su panel — así no vuelve a escribir nada.</p>
   </div>
 
-</div>
+  </div><!-- /modoActa -->
+
+  <!-- ═══════════════ MODO MATRIZ CONSOLIDADA ═══════════════ -->
+  <div id="modoMatriz" style="display:none">
+
+    <div class="card">
+      <h2>📊 Matriz Consolidada de Consumo</h2>
+      <p class="sub">Sube los Excel de <b>todos los comedores</b> de una misma licitación/contrato (plantilla
+        normal o FEGUA, mezcladas). Se extrae la información de cada Cuadro de Integración y se arma el cuadro
+        consolidado: un bloque por comedor —agrupando los días con igual ración— con subtotales y total general.</p>
+
+      <div class="grid g3" style="margin-top:6px">
+        <div>
+          <label>Departamento</label>
+          <select id="mz_departamento"><option value="">Selecciona…</option></select>
+        </div>
+        <div>
+          <label>Tipo</label>
+          <select id="mz_tipo"><option>LICITACIÓN</option><option>CONTRATO ABIERTO</option></select>
+        </div>
+        <div>
+          <label>Lote / Región</label>
+          <input id="mz_lote" placeholder="Ej. 20">
+        </div>
+        <div>
+          <label>Fecha y lugar</label>
+          <input id="mz_fecha" placeholder="Ej. Guatemala 30 de junio de 2026">
+        </div>
+        <div style="grid-column:span 2">
+          <label>Texto de "Integración…" (se autocompleta; puedes editarlo)</label>
+          <input id="mz_integracion" placeholder="Se genera al subir los comedores">
+        </div>
+      </div>
+      <div style="margin-top:10px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="mz_ceros" style="width:auto">
+          Incluir días en cero (0/0) como líneas — normalmente <b>no</b> (los días sin servicio no se listan)
+        </label>
+      </div>
+
+      <div style="margin-top:14px">
+        <label>Excel de los comedores (puedes seleccionar varios)</label>
+        <input type="file" id="mz_excel" accept=".xlsx,.xls" multiple onchange="onMatrizArchivos(event)">
+      </div>
+      <div class="resumen" id="mz_resumen"></div>
+    </div>
+
+    <div class="card">
+      <h2>🍽️ Comedores en la matriz <span class="badge" id="mz_contador">0</span></h2>
+      <p class="sub">Ordénalos y ajusta el nombre corto tal como debe aparecer en el cuadro (ej. "Fijo Roosevelt").</p>
+      <div id="mz_lista"><div class="vacio">Aún no has subido ningún comedor.</div></div>
+      <div class="btns" style="margin-top:12px">
+        <button class="b-primary" id="mz_btnPdf" onclick="generarMatrizPDF()" disabled>⬇️ Descargar PDF</button>
+        <button class="b-primary" id="mz_btnXlsx" onclick="generarMatrizXLSX()" disabled>⬇️ Descargar XLSX</button>
+        <button class="b-ghost" id="mz_btnPrev" onclick="vistaPreviaMatriz()" disabled>👁️ Vista previa</button>
+        <button class="b-ghost" onclick="vaciarMatriz()">🗑️ Vaciar</button>
+      </div>
+    </div>
+
+    <div class="card" id="mz_previewCard" style="display:none">
+      <h2>👁️ Vista previa de la Matriz</h2>
+      <iframe id="mz_previewFrame" style="width:100%;height:520px;border:1px solid var(--line);
+              border-radius:8px;background:#fff"></iframe>
+      <div class="btns" style="margin-top:12px">
+        <button class="b-ghost" onclick="document.getElementById('mz_previewCard').style.display='none'">✖ Cerrar</button>
+      </div>
+    </div>
+
+  </div><!-- /modoMatriz -->
+
+</div><!-- /wrap -->
 
 <div class="foot">
   Actas Consolidadas — MIDES · Subdirección de Comedores.<br>
@@ -275,6 +386,13 @@ function celdaAFecha(v){
 function fechaISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function fechaDMY(d){ return String(d.getDate()).padStart(2,'0')+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+d.getFullYear(); }
 function ci(v){ if(v===null||v===undefined||v==='') return ''; const n=parseInt(String(v).replace(/\.0$/,''),10); return isNaN(n)?'':n; }
+// Lee el No. de Envío preservándolo TAL CUAL se ve en el Excel (con ceros a la izquierda, ej. "000001").
+// Usa el texto formateado si existe; si no, cae al valor crudo. Devuelve string (no número).
+function envioTxt(vTxt, vRaw){
+  let s = (vTxt!=null && String(vTxt).trim()!=='') ? String(vTxt).trim() : (vRaw!=null ? String(vRaw).trim() : '');
+  s = s.replace(/\.0$/,'');            // quitar ".0" si Excel lo agregó
+  return s;                             // se conserva "000001", "246590", "0", etc.
+}
 // El "No. de Acta" debe ser tipo "NNN-AAAA" o un entero. NUNCA una fecha.
 // Devuelve {acta, esFecha}: si detecta una fecha (Excel mal llenado), acta='' y esFecha=true.
 function limpiarActa(v){
@@ -287,6 +405,165 @@ function limpiarActa(v){
   if(/^\d{4}-\d{2}-\d{2}([ T]|$)/.test(s)) return {acta:'', esFecha:true};
   if(/^\d{1,2}[/-]\d{1,2}[/-]\d{4}/.test(s)) return {acta:'', esFecha:true};
   return {acta:s, esFecha:false};
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   PARSER FEGUA — para el Comedor Social FEGUA, que tiene tickets CAR
+   (una segunda serie de tickets de almuerzo) además de los normales.
+   Lee la hoja "Control de Supervisor" con su layout de 18 columnas.
+   ══════════════════════════════════════════════════════════════════ */
+// Separa "A 0022569" -> {serie:"A", envio:"0022569"} preservando ceros.
+function sepSerieEnvio(v){
+  if(v==null) return {serie:'', envio:''};
+  const s=String(v).trim();
+  const m=s.match(/^([A-Za-z]+)\s+(\S+)$/);
+  if(m) return {serie:m[1], envio:m[2].replace(/\.0$/,'')};
+  // Solo número, sin serie
+  return {serie:'', envio:s.replace(/\.0$/,'')};
+}
+
+function extraerTablaFEGUA(workbook){
+  let filas=[], totDes=0, totAlm=0, totTotal=0, correlativo='', lote='', periodoTxt='';
+
+  // Localizar la hoja de control
+  let nombreHoja1=null;
+  for(const n of workbook.SheetNames){ if(n.toUpperCase().indexOf('CONTROL DE SUPERVISOR')>=0){ nombreHoja1=n; break; } }
+  const hoja1 = nombreHoja1 ? workbook.Sheets[nombreHoja1] : null;
+  if(!hoja1) return {filas:[], totDes:0, totAlm:0, totTotal:0, correlativo:'', lote:'', periodoTxt:'',
+    bloqueos:['No se encontró la hoja "Control de Supervisor".'], avisos:[], esFegua:true};
+
+  const rows=XLSX.utils.sheet_to_json(hoja1,{header:1, raw:true, defval:null});
+  const rowsTxt=XLSX.utils.sheet_to_json(hoja1,{header:1, raw:false, defval:null});
+  const norm=(v)=>String(v==null?'':v).toUpperCase().replace(/\./g,'').trim();
+
+  // 1) Localizar la fila de encabezado: buscar "TICKETS CAR" (marca distintiva de FEGUA)
+  let hdrCAR=-1, colCAR=-1;
+  for(let r=0;r<Math.min(rows.length,40);r++){
+    const fila=rows[r]||[];
+    for(let c=0;c<fila.length;c++){
+      if(norm(fila[c]).indexOf('TICKETS CAR')>=0){ hdrCAR=r; colCAR=c; break; }
+    }
+    if(hdrCAR>=0) break;
+  }
+  if(hdrCAR<0) return {filas:[], totDes:0, totAlm:0, totTotal:0, correlativo:'', lote:'', periodoTxt:'',
+    bloqueos:['No se encontró la columna "Tickets CAR". ¿Es un Excel de FEGUA?'], avisos:[], esFegua:true};
+
+  // 2) Localizar el ancla "No."+"FECHA" (el header principal está 1 fila arriba o en la misma zona)
+  let hdr=-1, base=-1;
+  for(let r=Math.max(0,hdrCAR-2); r<=hdrCAR+1 && r<rows.length; r++){
+    const fila=rows[r]||[];
+    for(let c=0;c<fila.length;c++){
+      const a=norm(fila[c]), b=norm(fila[c+1]);
+      if(a==='NO' && b.indexOf('FECHA')>=0){ hdr=r; base=c; break; }
+    }
+    if(hdr>=0) break;
+  }
+  if(hdr<0){ hdr=hdrCAR; base=0; }
+
+  // 3) Mapeo de columnas FEGUA (fijo según el layout oficial del Control de Supervisor):
+  //    A=No B=Fecha C=Acta D=DesSerie+Env F=DesIni G=DesFin H=DesServ
+  //    I=AlmSerie+Env K=AlmIni L=AlmFin M=AlmServ N=CARIni O=CARFin P=CARServ Q=TotAlm R=TotRac
+  const C={ no:base, fecha:base+1, acta:base+2, desEnv:base+3, desIni:base+5, desFin:base+6, desServ:base+7,
+            almEnv:base+8, almIni:base+10, almFin:base+11, almServ:base+12,
+            carIni:base+13, carFin:base+14, carServ:base+15, totAlm:base+16, totRac:base+17 };
+
+  // 4) Localizar primera fila de datos (después del header)
+  const esEntero=(v)=>{ if(v==null||String(v).trim()==='') return false; const n=Number(String(v).trim()); return Number.isFinite(n)&&Math.floor(n)===n; };
+  let r0=-1;
+  for(let r=hdrCAR+1;r<rows.length;r++){ if(esEntero((rows[r]||[])[C.no])){ r0=r; break; } }
+  if(r0<0) return {filas:[], totDes:0, totAlm:0, totTotal:0, correlativo:'', lote:'', periodoTxt:'',
+    bloqueos:['No se encontraron filas de datos.'], avisos:[], esFegua:true};
+
+  // 5) Leer filas
+  for(let r=r0;r<rows.length;r++){
+    const row=rows[r]||[], rowTxt=rowsTxt[r]||[];
+    const a=row[C.no];
+    if(!esEntero(a)){ if(filas.length) break; else continue; }
+    const des=sepSerieEnvio(rowTxt[C.desEnv]!=null?rowTxt[C.desEnv]:row[C.desEnv]);
+    const alm=sepSerieEnvio(rowTxt[C.almEnv]!=null?rowTxt[C.almEnv]:row[C.almEnv]);
+    const actaLimpia=limpiarActa(rowTxt[C.acta]!=null?rowTxt[C.acta]:row[C.acta]);
+    const fechaObj=celdaAFecha(row[C.fecha]);
+
+    // Fila de plantilla nunca usada: trae el "No." pre-numerado (p. ej. el día 31)
+    // pero TODO lo demás vacío (sin fecha, sin acta, sin tickets ni raciones).
+    // No es un "día en cero" real (esos traen fecha o un 0 explícito): se ignora por
+    // completo para que NO salga en el PDF. Misma lógica que el parser normal.
+    const sinFecha = !fechaObj;
+    const sinActa  = (!actaLimpia.acta || String(actaLimpia.acta).trim()==='') && !actaLimpia.esFecha;
+    const sinDatos = ci(row[C.desIni])==='' && ci(row[C.desFin])==='' && ci(row[C.desServ])==='' &&
+                     ci(row[C.almIni])==='' && ci(row[C.almFin])==='' && ci(row[C.almServ])==='' &&
+                     ci(row[C.carIni])==='' && ci(row[C.carFin])==='' && ci(row[C.carServ])==='' &&
+                     ci(row[C.totAlm])==='' && ci(row[C.totRac])==='';
+    if(sinFecha && sinActa && sinDatos) continue;  // fila de plantilla vacía → ignorar
+
+    filas.push({
+      no:parseInt(String(a),10),
+      fecha: fechaObj?fechaISO(fechaObj):'', fecha_fmt: fechaObj?fechaDMY(fechaObj):String(row[C.fecha]||''),
+      acta:actaLimpia.acta, acta_es_fecha:actaLimpia.esFecha,
+      des_serie:des.serie, des_envio:des.envio, des_ini:ci(row[C.desIni]), des_fin:ci(row[C.desFin]), des_tot:ci(row[C.desServ]),
+      alm_serie:alm.serie, alm_envio:alm.envio, alm_ini:ci(row[C.almIni]), alm_fin:ci(row[C.almFin]), alm_tot:ci(row[C.almServ]),
+      car_ini:ci(row[C.carIni]), car_fin:ci(row[C.carFin]), car_tot:ci(row[C.carServ]),
+      total_alm:ci(row[C.totAlm]), total:ci(row[C.totRac])
+    });
+  }
+
+  // 6) Totales
+  totDes=filas.reduce((a,f)=>a+(typeof f.des_tot==='number'?f.des_tot:0),0);
+  totAlm=filas.reduce((a,f)=>a+(typeof f.total_alm==='number'?f.total_alm:0),0);
+  totTotal=filas.reduce((a,f)=>a+(typeof f.total==='number'?f.total:0),0);
+
+  // 7) Correlativo, lote/región y período: buscarlos en CUADRO INTEGRACIÓN (no en Control,
+  //    donde el patrón NNN-AAAA se confunde con el No. de Acta del primer día).
+  let nombreHoja2=null;
+  for(const n of workbook.SheetNames){ if(n.toUpperCase().indexOf('CUADRO INTEGRACION')>=0 || n.toUpperCase().indexOf('CUADRO INTEGRACIÓN')>=0){ nombreHoja2=n; break; } }
+  const hoja2 = nombreHoja2 ? workbook.Sheets[nombreHoja2] : null;
+  if(hoja2){
+    const rows2=XLSX.utils.sheet_to_json(hoja2,{header:1, raw:true, defval:''});
+    const MESES_RE=/\b(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\b/;
+    for(let r=0;r<rows2.length;r++){
+      for(const v of (rows2[r]||[])){
+        if(v==null) continue; const s=String(v).trim(); if(!s) continue;
+        if(!correlativo && /^\d{1,4}-\d{4}$/.test(s)) correlativo=s;
+        const ml=s.toUpperCase().match(/(?:LOTE|REGI[OÓ]N)\s*:?\s*(\d+)/);
+        if(ml && !lote) lote=ml[1];
+        if(!periodoTxt && /\bDEL\b/.test(s.toUpperCase()) && MESES_RE.test(s.toUpperCase())) periodoTxt=s;
+      }
+    }
+  }
+
+  const val=validarFEGUA(filas);
+  return {filas, totDes, totAlm, totTotal, correlativo, lote, periodoTxt,
+    bloqueos:val.bloqueos, avisos:val.avisos, esFegua:true};
+}
+
+// Validaciones FEGUA (misma filosofía: bloquea/avisa)
+function validarFEGUA(filas){
+  const bloqueos=[], avisos=[];
+  if(!filas.length){ bloqueos.push('No se encontraron filas de datos.'); return {bloqueos,avisos}; }
+  const esVacia=(f)=>(!f.des_tot && !f.alm_tot && !f.car_tot && !f.des_ini && !f.alm_ini && !f.car_ini);
+  // Tickets incoherentes (desayuno, almuerzo normal, y CAR)
+  const inc=[];
+  filas.forEach(f=>{
+    if(esVacia(f)) return;
+    [['desayuno',f.des_ini,f.des_fin,f.des_tot],['almuerzo',f.alm_ini,f.alm_fin,f.alm_tot],['almuerzo CAR',f.car_ini,f.car_fin,f.car_tot]].forEach(([n,i,fi,t])=>{
+      if(typeof i==='number'&&typeof fi==='number'&&typeof t==='number'&&t>0){
+        if(fi<i) inc.push('día '+f.no+' ('+n+'): el final ('+fi+') es menor que el inicial ('+i+')');
+        else if((fi-i+1)!==t) inc.push('día '+f.no+' ('+n+'): el rango '+i+'–'+fi+' da '+(fi-i+1)+' pero se registraron '+t);
+      }
+    });
+    // Total almuerzos = normal + CAR
+    if(typeof f.alm_tot==='number'&&typeof f.car_tot==='number'&&typeof f.total_alm==='number'){
+      if(f.alm_tot+f.car_tot!==f.total_alm) inc.push('día '+f.no+': total almuerzos ('+f.total_alm+') ≠ normal ('+f.alm_tot+') + CAR ('+f.car_tot+')');
+    }
+  });
+  if(inc.length) bloqueos.push('Tickets incoherentes — '+inc.slice(0,6).join('; ')+(inc.length>6?'; y más…':'')+'.');
+  // Días en cero
+  const cero=filas.filter(esVacia).map(f=>f.no);
+  if(cero.length) avisos.push('El/los día(s) No. '+cero.join(', ')+' están en CERO.');
+  // Verificación de serie
+  const series=new Set(); filas.forEach(f=>{ if(f.des_serie) series.add(f.des_serie); if(f.alm_serie) series.add(f.alm_serie); });
+  if(series.size>1) avisos.push('Se detectaron varias series distintas: '+[...series].join(', ')+'. Verifica que sea correcto.');
+  return {bloqueos,avisos};
 }
 
 function extraerTablaConsolidada(workbook){
@@ -332,41 +609,86 @@ function extraerTablaConsolidada(workbook){
     }
     if(base<0) base=0; // último recurso: columna A
 
+    // 1a-ter) MAPEAR columnas por encabezado (no por offset fijo). El "No. de Acta"
+    //   a veces ocupa 2 columnas fusionadas (C+D), lo que corre las columnas de
+    //   Desayuno/Almuerzo. Localizamos los bloques buscando "DESAYUNO"/"ALMUERZO".
+    //   IMPORTANTE: esas etiquetas pueden estar una o dos filas ARRIBA del header
+    //   "No./Fecha" (como en Jalapa) o en la misma fila. Buscamos en una ventana que
+    //   abarca desde 2 filas arriba hasta 2 filas abajo del header.
+    let colDes=-1, colAlm=-1;
+    if(hdr>=0){
+      const desdeRR=Math.max(0, hdr-2), hastaRR=Math.min(hdr+3, rows.length);
+      for(let rr=desdeRR; rr<hastaRR; rr++){
+        const fh=rows[rr]||[];
+        for(let c=base; c<fh.length; c++){
+          const t=norm(fh[c]);
+          if(t.indexOf('DESAYUNO')>=0 && colDes<0) colDes=c;
+          if(t.indexOf('ALMUERZO')>=0 && colAlm<0) colAlm=c;
+        }
+      }
+    }
+    // Posiciones finales de cada campo. Si detectamos los bloques por encabezado, los usamos;
+    // si no (Excel sin esas etiquetas), caemos al layout clásico relativo a la base.
+    let cNo, cFecha, cActa, cDesE, cDesI, cDesF, cDesT, cAlmE, cAlmI, cAlmF, cAlmT, cTotal;
+    cNo=base; cFecha=base+1;
+    if(colDes>=0 && colAlm>=0 && colAlm>colDes){
+      // acta = desde base+2 hasta justo antes de colDes (puede ser 1 o 2 columnas; usamos base+2)
+      cActa=base+2;
+      cDesE=colDes; cDesI=colDes+1; cDesF=colDes+2; cDesT=colDes+3;
+      cAlmE=colAlm; cAlmI=colAlm+1; cAlmF=colAlm+2; cAlmT=colAlm+3;
+      cTotal=cAlmT+1;
+    } else {
+      // layout clásico (acta ocupa 1 columna)
+      cActa=base+2;
+      cDesE=base+3; cDesI=base+4; cDesF=base+5; cDesT=base+6;
+      cAlmE=base+7; cAlmI=base+8; cAlmF=base+9; cAlmT=base+10;
+      cTotal=base+11;
+    }
+
     // 1b) Primera fila de datos: col base entera después del header
     let r0=-1;
     const desde = hdr>=0 ? hdr+1 : 0;
-    for(let r=desde; r<rows.length; r++){ if(esEntero(rows[r] && rows[r][base])){ r0=r; break; } }
+    for(let r=desde; r<rows.length; r++){ if(esEntero(rows[r] && rows[r][cNo])){ r0=r; break; } }
     if(r0<0) r0 = (hdr>=0? hdr+3 : 0);
 
-    // 1c) Recorrer datos (todo relativo a la columna base) hasta "TOTAL"/"TOTALES"
+    // 1c) Recorrer datos usando las columnas mapeadas, hasta "TOTAL"/"TOTALES"
     for(let r=r0; r<rows.length; r++){
       const row=rows[r]||[];
-      const a=row[base];
+      const a=row[cNo];
       const rowtxt=[];
-      for(let k=0;k<12;k++) rowtxt.push(String(row[base+k]==null?'':row[base+k]));
+      for(let k=0;k<=(cTotal-base);k++) rowtxt.push(String(row[base+k]==null?'':row[base+k]));
       const rt=rowtxt.join(' ').toUpperCase();
       if(!esEntero(a)){
         if(/\bTOTAL(ES)?\b/.test(rt)){
-          const d6=ci(row[base+6]), d10=ci(row[base+10]), d11=ci(row[base+11]);
+          const d6=ci(row[cDesT]), d10=ci(row[cAlmT]), d11=ci(row[cTotal]);
           if(d6!=='') totDes=d6; if(d10!=='') totAlm=d10; if(d11!=='') totTotal=d11;
           break;
         }
         if(filas.length) break;
         continue;
       }
-      const fechaObj=celdaAFecha(row[base+1]);
+      const fechaObj=celdaAFecha(row[cFecha]);
       // Para el No. de Acta usamos el texto formateado (rowsTxt), que preserva "2-2026"
       // aunque la celda tenga formato de fecha aplicado.
       const rowTxt=rowsTxt[r]||[];
-      const actaLimpia=limpiarActa(rowTxt[base+2]!=null ? rowTxt[base+2] : row[base+2]);
+      const actaLimpia=limpiarActa(rowTxt[cActa]!=null ? rowTxt[cActa] : row[cActa]);
+
+      // Fila de plantilla nunca usada: tiene el "No." pre-numerado pero TODO lo demás vacío
+      // (sin fecha, sin acta, sin tickets). No es un "día en cero" real: se ignora por completo.
+      const sinFecha = !fechaObj;
+      const sinActa = (!actaLimpia.acta || String(actaLimpia.acta).trim()==='') && !actaLimpia.esFecha;
+      const sinDatos = ci(row[cDesE])==='' && ci(row[cDesI])==='' && ci(row[cDesT])==='' &&
+                       ci(row[cAlmE])==='' && ci(row[cAlmI])==='' && ci(row[cAlmT])==='';
+      if(sinFecha && sinActa && sinDatos) continue;  // fila de plantilla vacía → ignorar
+
       filas.push({
         no:parseInt(String(a),10),
-        fecha: fechaObj?fechaISO(fechaObj):'', fecha_fmt: fechaObj?fechaDMY(fechaObj):String(row[base+1]||''),
+        fecha: fechaObj?fechaISO(fechaObj):'', fecha_fmt: fechaObj?fechaDMY(fechaObj):String(row[cFecha]||''),
         acta:actaLimpia.acta,
         acta_es_fecha:actaLimpia.esFecha,
-        des_envio:ci(row[base+3]), des_ini:ci(row[base+4]), des_fin:ci(row[base+5]), des_tot:ci(row[base+6]),
-        alm_envio:ci(row[base+7]), alm_ini:ci(row[base+8]), alm_fin:ci(row[base+9]), alm_tot:ci(row[base+10]),
-        total:ci(row[base+11])
+        des_envio:envioTxt(rowTxt[cDesE], row[cDesE]), des_ini:ci(row[cDesI]), des_fin:ci(row[cDesF]), des_tot:ci(row[cDesT]),
+        alm_envio:envioTxt(rowTxt[cAlmE], row[cAlmE]), alm_ini:ci(row[cAlmI]), alm_fin:ci(row[cAlmF]), alm_tot:ci(row[cAlmT]),
+        total:ci(row[cTotal])
       });
     }
   }
@@ -385,41 +707,100 @@ function extraerTablaConsolidada(workbook){
         const v=fila[c]; if(v==null) continue;
         const s=String(v).trim(); if(!s) continue;
         if(!correlativo && /^\d{1,4}-\d{4}$/.test(s)) correlativo=s;
-        const mlote=s.toUpperCase().match(/LOTE\s*:?\s*(\d+)/);
+        // Aceptar "LOTE: N" (Excel antiguos) y "REGION: N" / "REGIÓN: N" (plantilla nueva).
+        const mlote=s.toUpperCase().match(/(?:LOTE|REGI[OÓ]N)\s*:?\s*(\d+)/);
         if(mlote && !lote) lote=mlote[1];
         if(!periodoTxt && /\bDEL\b/.test(s.toUpperCase()) && MESES_RE.test(s.toUpperCase())) periodoTxt=s;
       }
     }
   }
 
-  // 3) Si no vino la fila de totales, sumamos
-  if(!totDes && filas.length){
-    totDes=filas.reduce((a,f)=>a+(typeof f.des_tot==='number'?f.des_tot:0),0);
-    totAlm=filas.reduce((a,f)=>a+(typeof f.alm_tot==='number'?f.alm_tot:0),0);
-    totTotal=totDes+totAlm;
+  // 3) Totales: si la fila "Totales" no aportó algún valor (o quedó en 0),
+  //    lo recalculamos sumando las filas. Cubre variantes donde los totales
+  //    del Excel están en columnas que no detectamos.
+  if(filas.length){
+    const sumDes=filas.reduce((a,f)=>a+(typeof f.des_tot==='number'?f.des_tot:0),0);
+    const sumAlm=filas.reduce((a,f)=>a+(typeof f.alm_tot==='number'?f.alm_tot:0),0);
+    if(!totDes) totDes=sumDes;
+    if(!totAlm) totAlm=sumAlm;
+    if(!totTotal) totTotal=totDes+totAlm;
   }
 
-  // 4) Detectar huecos en la numeración (para avisar al supervisor)
+  // ══════════ VALIDACIONES (clasificadas: BLOQUEAN o AVISAN) ══════════
+
+  // [AVISA #7] Huecos en la numeración
   let huecos=[];
   for(let i=1;i<filas.length;i++){
     const salto=filas[i].no - filas[i-1].no;
     if(salto>1){ for(let k=filas[i-1].no+1;k<filas[i].no;k++) huecos.push(k); }
   }
 
-  // 4b) Detectar filas "vacías" (día registrado pero con tickets/raciones en 0),
-  //     que el supervisor probablemente olvidó llenar.
+  // Marca de "fila totalmente vacía" (día en cero) — se calcula una vez y se reutiliza.
+  const esFilaVacia=(f)=>(!f.des_tot && !f.alm_tot && !f.des_ini && !f.alm_ini && !f.des_fin && !f.alm_fin);
+
+  // [AVISA #6] Días en cero (fila con fecha pero sin tickets ni raciones)
   let filasEnCero=[];
+  filas.forEach(f=>{ if(esFilaVacia(f)) filasEnCero.push(f.no); });
+
+  // [BLOQUEA #2] No. de Acta ausente o ilegible (fecha mal capturada, o vacío) en filas CON datos
+  let actasConFecha=[];   // acta que en realidad es una fecha
+  let actasVacias=[];     // acta vacía en una fila que sí tiene datos
   filas.forEach(f=>{
-    const sinDatos = (!f.des_tot && !f.alm_tot && !f.des_ini && !f.alm_ini);
-    if(sinDatos) filasEnCero.push(f.no);
+    if(f.acta_es_fecha){ actasConFecha.push(f.no); return; }
+    if((!f.acta || String(f.acta).trim()==='') && !esFilaVacia(f)) actasVacias.push(f.no);
   });
 
-  // 4c) Detectar filas cuyo "No. de Acta" es una FECHA (Excel mal llenado).
-  //     La columna No. de Acta nunca debe contener fechas.
-  let actasConFecha=[];
-  filas.forEach(f=>{ if(f.acta_es_fecha) actasConFecha.push(f.no); });
+  // [BLOQUEA #5] Fecha ilegible en fila con datos
+  let fechasIlegibles=[];
+  filas.forEach(f=>{ if((!f.fecha || f.fecha==='') && !esFilaVacia(f)) fechasIlegibles.push(f.no); });
 
-  return {filas, totDes, totAlm, totTotal, correlativo, lote, periodoTxt, huecos, filasEnCero, actasConFecha};
+  // [BLOQUEA #4] Tickets incoherentes: Inicio>Final, o Total != (Final-Inicio+1).
+  //   Se omiten las filas totalmente vacías (esas son "día en cero", aviso #6).
+  let ticketsIncoherentes=[];
+  filas.forEach(f=>{
+    if(esFilaVacia(f)) return;
+    [['desayuno',f.des_ini,f.des_fin,f.des_tot],['almuerzo',f.alm_ini,f.alm_fin,f.alm_tot]].forEach(([comida,ini,fin,tot])=>{
+      if(typeof ini==='number' && typeof fin==='number' && typeof tot==='number' && tot>0){
+        if(fin<ini) ticketsIncoherentes.push({no:f.no, comida, detalle:'el ticket final ('+fin+') es menor que el inicial ('+ini+')'});
+        else if((fin-ini+1)!==tot) ticketsIncoherentes.push({no:f.no, comida, detalle:'el rango '+ini+'–'+fin+' da '+(fin-ini+1)+' raciones, pero se registraron '+tot});
+      }
+    });
+  });
+
+  // [BLOQUEA #3] Totales no cuadran: suma de días vs total del pie del Excel.
+  //   Solo se evalúa si el Excel TRAE un total en el pie (si no, no hay con qué comparar).
+  const sumDes=filas.reduce((a,f)=>a+(typeof f.des_tot==='number'?f.des_tot:0),0);
+  const sumAlm=filas.reduce((a,f)=>a+(typeof f.alm_tot==='number'?f.alm_tot:0),0);
+  let totalesNoCuadran=null;
+  if(totDes && totDes!==sumDes) totalesNoCuadran={tipo:'Desayunos', pie:totDes, suma:sumDes};
+  else if(totAlm && totAlm!==sumAlm) totalesNoCuadran={tipo:'Almuerzos', pie:totAlm, suma:sumAlm};
+
+  // [AVISA #9] Número de filas inusual
+  let filasInusual = (filas.length>=1 && filas.length<3) ? 'pocas' : (filas.length>31 ? 'muchas' : null);
+
+  // Consolidar: ¿hay algo que BLOQUEE?
+  const bloqueos=[];
+  if(!filas.length) bloqueos.push('No se encontró ninguna fila de datos en la hoja "CONTROL DE SUPERVISOR".'); // [BLOQUEA #1]
+  if(actasConFecha.length) bloqueos.push('El/los día(s) No. '+actasConFecha.join(', ')+' tienen una FECHA en la columna "No. de Acta" en vez del número. Corrige el Excel.');
+  if(actasVacias.length) bloqueos.push('El/los día(s) No. '+actasVacias.join(', ')+' no tienen "No. de Acta". Cada día con datos debe tener su número de acta.');
+  if(fechasIlegibles.length) bloqueos.push('El/los día(s) No. '+fechasIlegibles.join(', ')+' no tienen una fecha válida.');
+  if(ticketsIncoherentes.length){
+    const det=ticketsIncoherentes.slice(0,6).map(t=>'día '+t.no+' ('+t.comida+'): '+t.detalle).join('; ');
+    bloqueos.push('Tickets incoherentes — '+det+(ticketsIncoherentes.length>6?'; y más…':'')+'.');
+  }
+  if(totalesNoCuadran) bloqueos.push('Los totales de '+totalesNoCuadran.tipo+' no cuadran: el pie del Excel dice '+totalesNoCuadran.pie+' pero la suma de los días es '+totalesNoCuadran.suma+'.');
+
+  // Consolidar avisos (no bloquean)
+  const avisos=[];
+  if(filasEnCero.length) avisos.push('El/los día(s) No. '+filasEnCero.join(', ')+' están en CERO (sin tickets ni raciones).');
+  if(huecos.length) avisos.push('La numeración de días salta el/los No.: '+huecos.join(', ')+'.');
+  if(!correlativo) avisos.push('No se encontró el correlativo (NNN-AAAA) en la hoja "CUADRO INTEGRACION".');
+  if(filasInusual==='pocas') avisos.push('Solo se leyeron '+filas.length+' día(s). Verifica que el Excel esté completo.');
+  if(filasInusual==='muchas') avisos.push('Se leyeron '+filas.length+' días (más de 31). Verifica que no haya filas de más.');
+
+  return {filas, totDes, totAlm, totTotal, correlativo, lote, periodoTxt,
+    huecos, filasEnCero, actasConFecha, actasVacias, fechasIlegibles,
+    ticketsIncoherentes, totalesNoCuadran, bloqueos, avisos};
 }
 
 var excelActual = null; // {bytes: ArrayBuffer, nombre, datos:{filas,totDes,...}}
@@ -443,21 +824,34 @@ function onExcelSeleccionado(ev){
   reader.onload=function(e){
     try{
       const wb=XLSX.read(e.target.result, {type:'array', cellDates:true});
-      const datos=extraerTablaConsolidada(wb);
-      excelActual={ bytes:e.target.result, nombre:file.name, datos:datos };
+      const modo=val('com_tipo_acta')||'normal';
+      const datos = (modo==='fegua') ? extraerTablaFEGUA(wb) : extraerTablaConsolidada(wb);
+      excelActual={ bytes:e.target.result, nombre:file.name, datos:datos, esFegua:(modo==='fegua') };
+      // Pre-llenar el correlativo detectado para que el supervisor lo confirme o corrija
+      // (solo si el campo está vacío, para no pisar lo que ya escribió a mano)
+      const campoCorr=document.getElementById('com_correlativo');
+      if(campoCorr && !campoCorr.value.trim() && datos.correlativo){ campoCorr.value=datos.correlativo; }
       if(datos.filas.length){
         resumen.style.display='block';
-        resumen.innerHTML = '✅ <b>'+datos.filas.length+'</b> día(s) leídos · Desayunos: <b>'+datos.totDes+
+        let html = '✅ <b>'+datos.filas.length+'</b> día(s) leídos · Desayunos: <b>'+datos.totDes+
           '</b> · Almuerzos: <b>'+datos.totAlm+'</b> · Total: <b>'+datos.totTotal+'</b> raciones'+
-          (datos.correlativo?' · Correlativo: <b>'+escapeHtml(datos.correlativo)+'</b>':'')+
-          (datos.lote?' · Lote: <b>'+escapeHtml(datos.lote)+'</b>':'')+
-          (datos.huecos && datos.huecos.length ? '<br>⚠️ La numeración del Excel salta el/los No.: <b>'+datos.huecos.join(', ')+'</b> (revisa que sea correcto).' : '')+
-          (datos.filasEnCero && datos.filasEnCero.length ? '<br>⚠️ El/los día(s) No.: <b>'+datos.filasEnCero.join(', ')+'</b> están en CERO (sin tickets ni raciones). Corrígelos en el Excel antes de generar el acta.' : '')+
-          (datos.actasConFecha && datos.actasConFecha.length ? '<br><span style="color:#fca5a5">❌ El/los día(s) No.: <b>'+datos.actasConFecha.join(', ')+'</b> tienen una FECHA en la columna "No. de Acta" en vez del número de acta. Corrige el Excel: esa columna nunca debe llevar fechas. No se puede generar hasta corregirlo.</span>' : '');
+          (datos.correlativo?' · Correlativo detectado: <b>'+escapeHtml(datos.correlativo)+'</b> <span style="color:#94a3b8">(confírmalo o corrígelo en el campo "Correlativo del cuadro")</span>':'')+
+          (datos.lote?' · Lote: <b>'+escapeHtml(datos.lote)+'</b>':'');
+        // Errores que BLOQUEAN (rojo)
+        if(datos.bloqueos && datos.bloqueos.length){
+          html += '<div style="margin-top:8px;color:#fca5a5"><b>❌ No se puede generar el acta hasta corregir el Excel:</b><ul style="margin:4px 0 0;padding-left:18px">'+
+            datos.bloqueos.map(b=>'<li>'+escapeHtml(b)+'</li>').join('')+'</ul></div>';
+        }
+        // Anomalías que solo AVISAN (amarillo)
+        if(datos.avisos && datos.avisos.length){
+          html += '<div style="margin-top:8px;color:#fcd34d"><b>⚠️ Avisos (puedes continuar, pero revisa):</b><ul style="margin:4px 0 0;padding-left:18px">'+
+            datos.avisos.map(a=>'<li>'+escapeHtml(a)+'</li>').join('')+'</ul></div>';
+        }
+        resumen.innerHTML = html;
       } else {
         resumen.style.display='block';
-        resumen.innerHTML = '⚠️ No se encontraron filas en la hoja "CONTROL DE SUPERVISOR". '+
-          'Verifica que el archivo tenga esa hoja con el formato correcto.';
+        resumen.innerHTML = '❌ No se encontró la tabla de datos en la hoja "CONTROL DE SUPERVISOR". '+
+          'Verifica que el archivo tenga esa hoja con el encabezado "No. / Fecha / No. de Acta".';
       }
     }catch(err){
       excelActual=null;
@@ -477,10 +871,9 @@ function armarDatosActa(){
   if(!comedor){ alert('⚠️ Escribe el nombre del Comedor Social o Dependencia.'); return null; }
   if(!departamento || !municipio){ alert('⚠️ Selecciona Departamento y Municipio.'); return null; }
   if(!excelActual || !excelActual.datos.filas.length){ alert('⚠️ Sube el Excel de consumo con datos válidos antes de continuar.'); return null; }
-  if(excelActual.datos.actasConFecha && excelActual.datos.actasConFecha.length){
-    alert('❌ No se puede generar: el/los día(s) No. '+excelActual.datos.actasConFecha.join(', ')+
-      ' tienen una FECHA en la columna "No. de Acta" en vez del número de acta.\n\n'+
-      'La columna "No. de Acta" nunca debe contener fechas. Corrige el Excel y vuelve a subirlo.');
+  if(excelActual.datos.bloqueos && excelActual.datos.bloqueos.length){
+    alert('❌ No se puede generar el acta. Corrige lo siguiente en el Excel y vuelve a subirlo:\n\n• '+
+      excelActual.datos.bloqueos.join('\n\n• '));
     return null;
   }
   return {
@@ -489,9 +882,39 @@ function armarDatosActa(){
     supervisor: supNombre, supervisor_cui: supCui,
     filas: excelActual.datos.filas, tot_des: excelActual.datos.totDes,
     tot_alm: excelActual.datos.totAlm, tot_total: excelActual.datos.totTotal,
-    correlativo: excelActual.datos.correlativo, periodo_txt: excelActual.datos.periodoTxt,
+    correlativo: (val('com_correlativo').trim() || excelActual.datos.correlativo), periodo_txt: excelActual.datos.periodoTxt,
+    esFegua: !!excelActual.esFegua,
+    serie_des: (val('com_serie_des')||'CM').toUpperCase(),
+    serie_alm: (val('com_serie_alm')||'CM').toUpperCase(),
     no_acta:'SN', hora_acta: horaHM(), fecha_emision: null
   };
+}
+
+/* Selecciona el modo (pestañas Normal / FEGUA / Matriz) */
+function seleccionarTipoActa(modo){
+  document.getElementById('com_tipo_acta').value=modo;
+  document.getElementById('tab_normal').classList.toggle('activa', modo==='normal');
+  document.getElementById('tab_fegua').classList.toggle('activa', modo==='fegua');
+  const tm=document.getElementById('tab_matriz'); if(tm) tm.classList.toggle('activa', modo==='matriz');
+  // Mostrar/ocultar los contenedores de cada modo
+  const mActa=document.getElementById('modoActa'), mMatriz=document.getElementById('modoMatriz');
+  if(mActa)   mActa.style.display   = (modo==='matriz') ? 'none' : '';
+  if(mMatriz) mMatriz.style.display = (modo==='matriz') ? '' : 'none';
+  const hint=document.getElementById('hintTipoActa');
+  if(hint) hint.textContent =
+      (modo==='matriz') ? 'Sube los Excel de varios comedores para generar el cuadro consolidado (Matriz) en PDF y XLSX.'
+    : (modo==='fegua')  ? 'El comedor FEGUA maneja dos tipos de tickets de almuerzo (normales y CAR). La serie se toma del Excel. Usa este modo solo para el Excel de FEGUA.'
+    :                     'Modo estándar para los comedores normales.';
+  if(modo==='matriz') return;  // el resto solo aplica al flujo de actas
+  // Los campos de serie manual solo aplican al modo normal (en FEGUA la serie viene del Excel)
+  const wd=document.getElementById('wrap_serie_des'), wa=document.getElementById('wrap_serie_alm');
+  if(wd) wd.style.display = (modo==='fegua') ? 'none' : '';
+  if(wa) wa.style.display = (modo==='fegua') ? 'none' : '';
+  // Si ya hay un Excel cargado, vuelve a procesarlo con el parser correspondiente
+  const input=document.getElementById('com_excel');
+  if(input && input.files && input.files[0]){
+    onExcelSeleccionado({target:input});
+  }
 }
 
 /* ═══════════════ Vista previa ═══════════════ */
@@ -639,12 +1062,161 @@ async function descargarLoteZip(){
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   MATRIZ CONSOLIDADA — subir varios comedores y generar el cuadro
+   consolidado (PDF + XLSX). Usa el motor matriz-consolidada.js.
+   ═══════════════════════════════════════════════════════════════════ */
+let matrizComedores = [];  // {nombre, modalidad, precioDes, precioAlm, filas, totDes, totAlm, esFegua, archivo}
+
+function onMatrizArchivos(ev){
+  const files = Array.from(ev.target.files||[]);
+  const resumen = document.getElementById('mz_resumen');
+  if(!files.length) return;
+  let leidos=0; const errores=[]; let pendientes=files.length;
+  files.forEach(file=>{
+    const reader=new FileReader();
+    reader.onload=function(e){
+      try{
+        const wb=XLSX.read(e.target.result,{type:'array',cellDates:true});
+        const d=MatrizConsolidada.extraerComedor(wb, XLSX);
+        if(d.error){ errores.push(escapeHtml(file.name)+': '+escapeHtml(d.error)); }
+        else{
+          matrizComedores.push({
+            nombre: d.comedor||file.name.replace(/\.xlsx?$/i,''),
+            modalidad: d.modalidad||'Fijo',
+            precioDes: d.precioDes||0, precioAlm: d.precioAlm||0,
+            filas: d.filas, totDes:d.totDes, totAlm:d.totAlm, esFegua:d.esFegua, archivo:file.name
+          });
+          leidos++; autocompletarMetaMatriz(d);
+        }
+      }catch(err){ errores.push(escapeHtml(file.name)+': '+escapeHtml(String(err))); }
+      if(--pendientes===0){
+        ev.target.value='';
+        renderMatrizLista();
+        let html = leidos? ('✅ <b>'+leidos+'</b> comedor(es) agregado(s).') : '';
+        if(errores.length) html+='<div style="margin-top:8px;color:#fca5a5"><b>No se pudieron leer:</b><ul style="margin:4px 0 0;padding-left:18px"><li>'+errores.join('</li><li>')+'</li></ul></div>';
+        resumen.style.display='block'; resumen.innerHTML=html||'Sin cambios.';
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function autocompletarMetaMatriz(d){
+  const f=(id,v)=>{ const el=document.getElementById(id); if(el && !el.value.trim() && v) el.value=v; };
+  if(d.tipoContrato){ const s=document.getElementById('mz_tipo'); if(s && s.value==='LICITACIÓN') s.value=d.tipoContrato; }
+  f('mz_lote', d.lote);
+  f('mz_fecha', d.fechaLugar);
+}
+
+function leerMetaMatriz(conIntegracion){
+  const dsel=document.getElementById('mz_departamento');
+  const meta={
+    depto: dsel? dsel.value : '',
+    tipoContrato: val('mz_tipo')||'LICITACIÓN',
+    lote: val('mz_lote'),
+    fechaLugar: val('mz_fecha'),
+    incluirCeros: document.getElementById('mz_ceros').checked
+  };
+  if(conIntegracion){
+    const it=val('mz_integracion');
+    meta.integracion = it? [it] : (matrizComedores.length? [MatrizConsolidada.integracionDefault(matrizComedores, meta)] : ['']);
+  }
+  return meta;
+}
+
+function actualizarIntegracionMatriz(){
+  const el=document.getElementById('mz_integracion');
+  if(!el || !matrizComedores.length) return;
+  if(el.dataset.editado==='1' && el.value.trim()) return;  // respeta la edición manual
+  el.value = MatrizConsolidada.integracionDefault(matrizComedores, leerMetaMatriz(false));
+}
+
+function renderMatrizLista(){
+  const cont=document.getElementById('mz_lista');
+  document.getElementById('mz_contador').textContent=matrizComedores.length;
+  const hay=matrizComedores.length>0;
+  ['mz_btnPdf','mz_btnXlsx','mz_btnPrev'].forEach(id=>{ const b=document.getElementById(id); if(b) b.disabled=!hay; });
+  if(!hay){ cont.innerHTML='<div class="vacio">Aún no has subido ningún comedor.</div>'; return; }
+  const inc=document.getElementById('mz_ceros').checked;
+  cont.innerHTML = matrizComedores.map((c,i)=>{
+    const g=MatrizConsolidada.agrupar(c.filas, inc).length;
+    return '<div class="lote-item">'+
+      '<div class="info" style="flex:1;min-width:220px">'+
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px">'+
+          '<input value="'+escapeHtml(c.nombre)+'" onchange="renombrarComedorMatriz('+i+',this.value)" style="flex:1;min-width:150px;padding:6px 8px" placeholder="Nombre en el cuadro">'+
+          '<select onchange="modalidadComedorMatriz('+i+',this.value)" style="width:auto;padding:6px">'+
+            '<option'+(/fijo/i.test(c.modalidad)?' selected':'')+'>Fijo</option>'+
+            '<option'+(/m[oó]vil/i.test(c.modalidad)?' selected':'')+'>Móvil</option></select>'+
+        '</div>'+
+        '<span>'+escapeHtml(c.archivo)+' · '+c.filas.length+' día(s) → '+g+' línea(s) · Des: <b>'+c.totDes+'</b> · Alm: <b>'+c.totAlm+
+          '</b> · Precio: Q'+c.precioDes+' / Q'+c.precioAlm+(c.esFegua?' · <b>FEGUA</b>':'')+'</span>'+
+      '</div>'+
+      '<div class="acciones">'+
+        '<button class="b-ghost" onclick="moverComedorMatriz('+i+',-1)"'+(i===0?' disabled':'')+'>▲</button>'+
+        '<button class="b-ghost" onclick="moverComedorMatriz('+i+',1)"'+(i===matrizComedores.length-1?' disabled':'')+'>▼</button>'+
+        '<button class="b-danger" onclick="quitarComedorMatriz('+i+')">🗑️</button>'+
+      '</div></div>';
+  }).join('');
+  actualizarIntegracionMatriz();
+}
+
+function renombrarComedorMatriz(i,v){ if(matrizComedores[i]) matrizComedores[i].nombre=v; }
+function modalidadComedorMatriz(i,v){ if(matrizComedores[i]){ matrizComedores[i].modalidad=v; renderMatrizLista(); } }
+function quitarComedorMatriz(i){ matrizComedores.splice(i,1); renderMatrizLista(); }
+function moverComedorMatriz(i,dir){ const j=i+dir; if(j<0||j>=matrizComedores.length) return;
+  const t=matrizComedores[i]; matrizComedores[i]=matrizComedores[j]; matrizComedores[j]=t; renderMatrizLista(); }
+function vaciarMatriz(){ if(matrizComedores.length && !confirm('¿Vaciar todos los comedores de la matriz?')) return;
+  matrizComedores=[]; renderMatrizLista(); const r=document.getElementById('mz_resumen'); if(r) r.style.display='none'; }
+
+function construirModeloMatriz(){
+  if(!matrizComedores.length){ alert('⚠️ Sube al menos un comedor.'); return null; }
+  const meta=leerMetaMatriz(true);
+  if(!meta.depto){ alert('⚠️ Selecciona el Departamento de la matriz.'); return null; }
+  const comedores=matrizComedores.map((c,i)=>({no:i+1,nombre:c.nombre,modalidad:c.modalidad,
+    precioDes:c.precioDes,precioAlm:c.precioAlm,filas:c.filas}));
+  return MatrizConsolidada.construirModelo(comedores, meta);
+}
+function nombreArchivoMatriz(ext){
+  const dep=(document.getElementById('mz_departamento')||{}).value||'';
+  return 'Matriz_Consolidada_'+slug(dep||'consumo')+'_'+new Date().toISOString().slice(0,10)+'.'+ext;
+}
+function generarMatrizPDF(){
+  const modelo=construirModeloMatriz(); if(!modelo) return;
+  try{ const doc=MatrizConsolidada.construirPDFDoc(modelo, window.pdfMake);
+    pdfMake.createPdf(doc).download(nombreArchivoMatriz('pdf'));
+  }catch(e){ alert('No se pudo generar el PDF: '+e); }
+}
+function generarMatrizXLSX(){
+  const modelo=construirModeloMatriz(); if(!modelo) return;
+  const LX=window.XLSXStyle||window.XLSX;
+  try{ const wb=MatrizConsolidada.construirXLSX(modelo, LX); LX.writeFile(wb, nombreArchivoMatriz('xlsx')); }
+  catch(e){ alert('No se pudo generar el XLSX: '+e); }
+}
+function vistaPreviaMatriz(){
+  const modelo=construirModeloMatriz(); if(!modelo) return;
+  try{ const doc=MatrizConsolidada.construirPDFDoc(modelo, window.pdfMake);
+    pdfMake.createPdf(doc).getDataUrl(url=>{
+      document.getElementById('mz_previewCard').style.display='block';
+      document.getElementById('mz_previewFrame').src=url;
+    });
+  }catch(e){ alert('No se pudo generar la vista previa: '+e); }
+}
+
 window.addEventListener('DOMContentLoaded', function(){
   poblarDepartamentos('com_departamento');
   populateMunicipios('','com_municipio');
   precargarSupervisor();
   formatearCuiInput('sup_cui');   // después de precargar, para normalizar un CUI guardado sin espacios
   cargarLote();
+  // Matriz Consolidada
+  poblarDepartamentos('mz_departamento');
+  const dsel=document.getElementById('mz_departamento');
+  if(dsel) dsel.addEventListener('change', actualizarIntegracionMatriz);
+  const iel=document.getElementById('mz_integracion');
+  if(iel) iel.addEventListener('input', ()=>{ iel.dataset.editado='1'; });
+  const cel=document.getElementById('mz_ceros');
+  if(cel) cel.addEventListener('change', renderMatrizLista);
 });
 </script>
 </body>
